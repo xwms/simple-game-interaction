@@ -1,0 +1,67 @@
+appId: com.sgi.app
+productName: SGI
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/main/**/*
+  - dist/renderer/**/*
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icons/icon.ico
+  artifactName: ${productName}-Setup-${version}-win.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: resources/icons/icon.icns
+  artifactName: ${productName}-${version}-mac.${ext}
+  category: public.app-category.utilities
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: resources/icons/
+  category: Network
+  artifactName: ${productName}-${version}-linux.${ext}
+
+publish:
+  - provider: generic
+    url: https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download
+  - provider: github
+    owner: ${GH_OWNER}
+    repo: ${GH_REPO}
+
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

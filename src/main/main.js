@@ -1,0 +1,70 @@
+/**
+ * 功能描述：Electron 主进程入口 — 创建应用窗口，注册 IPC，管理生命周期
+ *
+ * 逻辑说明：1) 应用准备就绪后创建主窗口；2) 注册所有 IPC 通道；3) 管理窗口生命周期，
+ *           macOS 下保持 activate 事件处理。窗口关闭时判断平台决定是否退出。
+ *
+ * @module main
+ */
+
+'use strict'
+
+const { app, BrowserWindow } = require('electron')
+const path = require('path')
+const { createWindow } = require('./window-manager')
+const { registerIpcHandlers } = require('./ipc-handlers')
+const { createTray } = require('./tray')
+const { createMenu } = require('./menu')
+
+// 开发环境下加载 Vite dev server URL
+const isDev = !app.isPackaged
+
+// 开发模式下抑制 Electron CSP 安全警告
+// Vite HMR 需要 'unsafe-eval'，属于开发环境预期行为，生产环境有严格 CSP
+if (isDev) {
+  process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
+}
+
+/**
+ * 功能描述：应用启动入口
+ *
+ * 逻辑说明：按顺序执行：创建菜单 → 注册 IPC → 创建窗口 → 创建托盘。
+ *           macOS 下 app.dock 在创建窗口前显示。
+ */
+function bootstrap() {
+  createMenu()
+  registerIpcHandlers()
+  createWindow()
+
+  if (isDev) {
+    const { initUpdater } = require('./updater')
+    initUpdater()
+  }
+}
+
+app.whenReady().then(() => {
+  bootstrap()
+
+  app.on('activate', () => {
+    // macOS: 点击 Dock 图标时如果没有窗口则重建
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+    }
+  })
+})
+
+app.on('window-all-closed', () => {
+  // macOS 下不退出应用（保持 Dock 图标）
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})
+
+app.on('before-quit', () => {
+  // 清理系统托盘
+  const { getTray } = require('./tray')
+  const tray = getTray()
+  if (tray) {
+    tray.destroy()
+  }
+})
