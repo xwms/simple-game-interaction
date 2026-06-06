@@ -4,18 +4,29 @@
  * 逻辑说明：使用 ipcMain.handle 注册所有 IPC 通道，每个处理函数接收
  *           event 和 args，处理后返回结果给渲染进程。所有通道返回
  *           { success, data/error } 统一格式。
+ *           同时注册 Logger 日志转发器，将核心引擎的日志广播到渲染进程。
  *
  * @module ipc-handlers
  */
 
 'use strict'
 
-const { ipcMain, app, shell } = require('electron')
+const { ipcMain, app, shell, BrowserWindow } = require('electron')
 
 /**
  * 功能描述：注册所有 IPC 通道
  */
 function registerIpcHandlers() {
+  // ─── 日志转发（核心引擎 Logger → 渲染进程）────────────
+  const { addLogForwarder } = require('../core/utils/logger')
+
+  addLogForwarder((_level, message) => {
+    const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+    for (const win of wins) {
+      win.webContents.send('log:info', message)
+    }
+  })
+
   // ─── 通用 ───────────────────────────────────────────
 
   ipcMain.handle('app:get-version', () => {
@@ -35,7 +46,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('network:detect', async () => {
     try {
-      const { NetworkDetector } = require('@core/network-detect/detector')
+      const { NetworkDetector } = require('../core/network-detect/detector')
       const detector = new NetworkDetector()
       const result = await detector.detect()
       return { success: true, data: result }
@@ -46,19 +57,129 @@ function registerIpcHandlers() {
 
   // ─── 房间 ───────────────────────────────────────────
 
+  /** @type {import('../core/tunnel/tunnel-manager').TunnelManager|null} */
+  let _tunnelManager = null
+
+  /**
+   * 功能描述：获取或创建 TunnelManager 单例
+   */
+  function _getTunnelManager() {
+    if (!_tunnelManager) {
+      const { TunnelManager } = require('../core/tunnel/tunnel-manager')
+      _tunnelManager = new TunnelManager()
+
+      _tunnelManager.on('status', (status) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:status', status)
+        })
+      })
+
+      _tunnelManager.on('traffic', (stats) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:traffic', stats)
+        })
+      })
+
+      _tunnelManager.on('error', (err) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:error', { message: err.message })
+        })
+      })
+
+      _tunnelManager.on('member-joined', (member) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('room:member-joined', member)
+        })
+      })
+
+      _tunnelManager.on('member-left', (data) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('room:member-left', data)
+        })
+      })
+
+      _tunnelManager.on('connected', (data) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:connected', data)
+        })
+      })
+
+      _tunnelManager.on('transport-changed', (transportType) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:transport-changed', transportType)
+        })
+      })
+
+    }
+    return _tunnelManager
+  }
+
   ipcMain.handle('room:create', async (_event, options) => {
     try {
-      // TODO: 实现房间创建逻辑
-      return { success: true, data: { roomCode: '------', status: 'created' } }
+      const manager = _getTunnelManager()
+      const result = await manager.createRoom(options)
+      return { success: true, data: { roomCode: result.roomCode, status: 'created' } }
+    } catch (err) {
+      console.error(`创建房间失败: ${err.message}`)
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('room:join', async (_event, { roomCode, memberName }) => {
+    try {
+      const manager = _getTunnelManager()
+      await manager.joinRoom(roomCode)
+      const status = await manager.getStatus()
+      return { success: true, data: { status: 'connected', localPort: status.localPort } }
     } catch (err) {
       return { success: false, error: err.message }
     }
   })
 
-  ipcMain.handle('room:join', async (_event, roomCode) => {
+  ipcMain.handle('room:leave', async () => {
     try {
-      // TODO: 实现加入房间逻辑
-      return { success: true, data: { status: 'connecting' } }
+      if (_tunnelManager) {
+        await _tunnelManager.leaveRoom()
+      }
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('room:info', async () => {
+    try {
+      if (_tunnelManager) {
+        const status = await _tunnelManager.getStatus()
+        return { success: true, data: status }
+      }
+      return { success: true, data: null }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  // ─── 隧道 ───────────────────────────────────────────
+
+  ipcMain.handle('tunnel:start', async (_event, options) => {
+    try {
+      const manager = _getTunnelManager()
+      const status = await manager.getStatus()
+      return {
+        success: true,
+        data: { port: status.localPort, transport: status.transportType || 'relay' }
+      }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('tunnel:stop', async () => {
+    try {
+      if (_tunnelManager) {
+        await _tunnelManager.leaveRoom()
+      }
+      return { success: true }
     } catch (err) {
       return { success: false, error: err.message }
     }
@@ -76,27 +197,79 @@ function registerIpcHandlers() {
     }
   })
 
-  // ─── 日志 ───────────────────────────────────────────
+  // ─── 日志（渲染进程上报 → 统一格式后广播）───────────────
+
+  function _formatLog(level, message) {
+    const ts = new Date().toISOString()
+    return `[${ts}] [${level}] [Renderer] ${message}`
+  }
+
+  function _broadcastLog(message) {
+    const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+    for (const win of wins) {
+      win.webContents.send('log:info', message)
+    }
+  }
 
   ipcMain.handle('log:info', (_event, message) => {
-    console.log(`[Renderer] ${message}`)
+    const formatted = _formatLog('INFO', message)
+    console.log(formatted)
+    _broadcastLog(formatted)
     return { success: true }
   })
 
   ipcMain.handle('log:error', (_event, message) => {
-    console.error(`[Renderer] ${message}`)
+    const formatted = _formatLog('ERROR', message)
+    console.error(formatted)
+    _broadcastLog(formatted)
     return { success: true }
   })
 
-  // ─── 预留通道桩 ────────────────────────────────────
-  // LAN 扫描和游戏检测通道将在实现后完善
+  // ─── LAN 扫描 ───────────────────────────────────────
+
+  /** @type {import('../core/discovery/scanner').Scanner|null} */
+  let _scanner = null
 
   ipcMain.handle('lan:start-scan', async () => {
-    return { success: true, data: { status: 'scanning' } }
+    try {
+      const { Scanner } = require('../core/discovery/scanner')
+      if (!_scanner) {
+        _scanner = new Scanner()
+        _scanner.on('game-discovered', (event) => {
+          // 向渲染进程推送发现的游戏
+          BrowserWindow.getAllWindows().forEach((win) => {
+            win.webContents.send('lan:scan-result', event)
+          })
+        })
+      }
+      await _scanner.start()
+      return { success: true, data: { status: 'scanning' } }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
   })
 
   ipcMain.handle('lan:stop-scan', async () => {
-    return { success: true, data: { status: 'stopped' } }
+    try {
+      if (_scanner) {
+        _scanner.stop()
+      }
+      return { success: true, data: { status: 'stopped' } }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  // ─── 本地游戏检测 ───────────────────────────────────
+
+  ipcMain.handle('game:detect-local', async () => {
+    try {
+      const { detectLocalGames } = require('../core/game-detect/index')
+      const results = await detectLocalGames()
+      return { success: true, data: results }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
   })
 }
 

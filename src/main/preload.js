@@ -40,7 +40,8 @@ const CHANNEL_WHITELIST = [
   'tunnel:stop',
   'tunnel:error',
   'tunnel:traffic',
-
+  'tunnel:connected',
+  'tunnel:transport-changed',
   // 网络检测
   'network:detect',
   'network:detect-result',

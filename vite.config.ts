@@ -50,9 +50,9 @@ export default defineConfig({
     emptyOutDir: true
   },
 
-  // 开发服务器配置
+  // 开发服务器配置（可通过 VITE_DEV_SERVER_PORT 环境变量覆盖，用于多实例调试）
   server: {
-    port: 5173,
+    port: parseInt(process.env.VITE_DEV_SERVER_PORT || '5173', 10),
     strictPort: true
   },
 

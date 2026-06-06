@@ -7,7 +7,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  game: { id: string; name: string; port: number; status?: string }
+  game: { gameId: string; name: string; port: number; running?: boolean; portOpen?: boolean }
   selected: boolean
 }>()
 
@@ -24,8 +24,10 @@ const emit = defineEmits<{
   >
     <div class="font-medium">{{ game.name }}</div>
     <div class="text-sm text-gray-500">
-      端口 {{ game.port }}
-      <span v-if="game.status" class="ml-2">· {{ game.status }}</span>
+      端口 {{ game.portOpen ? game.port : '待开放' }}
+      <span v-if="game.running && game.portOpen" class="ml-2 text-green-500">· 运行中</span>
+      <span v-else-if="game.running && !game.portOpen" class="ml-2 text-yellow-500">· 进程运行（端口未开放）</span>
+      <span v-else-if="game.portOpen" class="ml-2">· 端口开放</span>
     </div>
   </div>
 </template>

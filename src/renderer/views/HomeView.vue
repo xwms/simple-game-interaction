@@ -2,15 +2,17 @@
  * 首页
  *
  * 使用方式：路由 '/'
- * 逻辑说明：顶部两个操作按钮（创建/加入房间）；中部显示当前版本更新日志；
- *           底部显示版本号和更新状态。
+ * 逻辑说明：顶部两个操作按钮（创建/加入房间）；中间显示网络检测状态；
+ *           再下方显示当前版本更新日志；底部显示版本号和更新状态。
  */
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useNetworkDetect, natTypeLabel, inferConnectionPath } from '../composables/useNetworkDetect'
 
 const router = useRouter()
+const { status, result, refresh } = useNetworkDetect()
 
 const currentVersion = ref('0.1.0')
 const updateStatus = ref<'checking' | 'latest' | 'available' | 'error'>('checking')
@@ -71,6 +73,36 @@ onMounted(() => {
       >
         🔗 加入房间
       </n-button>
+    </div>
+
+    <!-- 网络检测状态 -->
+    <div class="w-full max-w-md mb-4">
+      <div v-if="status === 'detecting'" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800">
+        <n-spin size="small" />
+        <span class="text-sm text-gray-500">正在检测网络环境...</span>
+      </div>
+
+      <div v-else-if="status === 'done' && result" class="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 text-sm">
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-2.5 h-2.5 rounded-full"
+            :class="result.ipv6.available ? 'bg-green-500' : 'bg-gray-400'">
+          </span>
+          <span class="text-gray-600 dark:text-gray-300">
+            {{ result.ipv6.hasPublicV6 ? 'IPv6' : result.ipv6.available ? 'IPv6(本地)' : 'IPv6×' }}
+          </span>
+        </div>
+        <span class="text-gray-300">|</span>
+        <span class="text-gray-600 dark:text-gray-300">{{ natTypeLabel(result.ipv4) }}</span>
+        <span class="text-gray-300">|</span>
+        <span class="text-primary">{{ inferConnectionPath(result).label }}</span>
+        <button class="ml-auto text-gray-400 hover:text-gray-600 text-xs" @click="refresh" title="重新检测">↻</button>
+      </div>
+
+      <div v-else-if="status === 'error'" class="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 text-sm text-gray-400">
+        <span>⚠</span>
+        <span>网络检测失败</span>
+        <button class="ml-auto text-primary hover:underline text-xs" @click="refresh">重新检测</button>
+      </div>
     </div>
 
     <!-- 更新日志 -->

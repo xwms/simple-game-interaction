@@ -19,15 +19,6 @@ const isDev = !require('electron').app.isPackaged
 let mainWindow = null
 
 /**
- * 功能描述：获取主窗口实例
- *
- * @returns {BrowserWindow|null}
- */
-function getMainWindow() {
-  return mainWindow
-}
-
-/**
  * 功能描述：创建主窗口
  *
  * 逻辑说明：设置窗口大小、最小尺寸、preload 脚本路径。
@@ -125,4 +116,4 @@ function showMainWindow() {
   }
 }
 
-module.exports = { createWindow, getMainWindow, showMainWindow }
+module.exports = { createWindow, showMainWindow }

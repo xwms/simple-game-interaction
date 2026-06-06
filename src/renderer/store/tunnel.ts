@@ -7,16 +7,48 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { TunnelStatus } from '@shared/types'
+import type { TunnelStatus, TransportType } from '@shared/types'
 
 export const useTunnelStore = defineStore('tunnel', () => {
   // ─── 状态 ───────────────────────────────────────────
   const status = ref<TunnelStatus>('disconnected')
-  const transport = ref<'ipv6' | 'p2p' | 'relay' | null>(null)
+  const transport = ref<TransportType | null>(null)
   const localPort = ref<number | null>(null)
   const bytesSent = ref(0)
   const bytesReceived = ref(0)
   const error = ref<string | null>(null)
+
+  // ─── IPC 监听（仅注册一次） ──────────────────────────
+  let _initialized = false
+  function _ensureListeners(): void {
+    if (_initialized) return
+    _initialized = true
+
+    window.electronAPI.on('tunnel:status', (newStatus: unknown) => {
+      status.value = newStatus as TunnelStatus
+    })
+
+    window.electronAPI.on('tunnel:traffic', (stats: unknown) => {
+      const s = stats as { bytesSent: number; bytesReceived: number }
+      bytesSent.value = s.bytesSent
+      bytesReceived.value = s.bytesReceived
+    })
+
+    window.electronAPI.on('tunnel:error', (data: unknown) => {
+      error.value = (data as { message: string }).message
+      status.value = 'error'
+    })
+
+    window.electronAPI.on('tunnel:connected', (data: unknown) => {
+      const d = data as { localPort: number; transportType?: string }
+      localPort.value = d.localPort
+      status.value = 'connected'
+    })
+
+    window.electronAPI.on('tunnel:transport-changed', (transportType: unknown) => {
+      transport.value = transportType as TransportType
+    })
+  }
 
   // ─── 方法 ───────────────────────────────────────────
 
@@ -26,11 +58,12 @@ export const useTunnelStore = defineStore('tunnel', () => {
    * @param port - 本地监听端口
    */
   async function startTunnel(port: number): Promise<void> {
+    _ensureListeners()
     status.value = 'connecting'
     try {
-      const result = await window.electronAPI.invoke('tunnel:start', port)
+      const result = await window.electronAPI.invoke('tunnel:start', { port, roomCode: '' })
       if (result.success) {
-        const data = result.data as { port: number; transport: 'ipv6' | 'p2p' | 'relay' }
+        const data = result.data as { port: number; transport: TransportType }
         localPort.value = data.port
         transport.value = data.transport
         status.value = 'connected'
@@ -47,6 +80,7 @@ export const useTunnelStore = defineStore('tunnel', () => {
    * 功能描述：停止隧道
    */
   async function stopTunnel(): Promise<void> {
+    _ensureListeners()
     try {
       await window.electronAPI.invoke('tunnel:stop')
     } finally {

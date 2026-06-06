@@ -9,6 +9,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { MemberInfo } from '@shared/types'
 
+import { useTunnelStore } from './tunnel'
+
 export const useRoomStore = defineStore('room', () => {
   // ─── 状态 ───────────────────────────────────────────
   const roomCode = ref<string>('')
@@ -16,10 +18,29 @@ export const useRoomStore = defineStore('room', () => {
   const members = ref<MemberInfo[]>([])
   const connectionStatus = ref<'idle' | 'connecting' | 'connected' | 'disconnected'>('idle')
   const error = ref<string | null>(null)
+  const memberName = ref<string>('')
 
   // ─── 计算属性 ───────────────────────────────────────
   const isHost = computed(() => role.value === 'host')
   const memberCount = computed(() => members.value.length)
+
+  // ─── IPC 监听器（仅注册一次） ────────────────────────
+  let _initialized = false
+  function _ensureListeners(): void {
+    if (_initialized) return
+    _initialized = true
+
+    window.electronAPI.on('room:member-joined', (member: unknown) => {
+      const m = member as MemberInfo
+      const idx = members.value.findIndex(x => x.id === m.id)
+      if (idx === -1) members.value.push(m)
+    })
+
+    window.electronAPI.on('room:member-left', (data: unknown) => {
+      const d = data as { memberId: string }
+      members.value = members.value.filter(m => m.id !== d.memberId)
+    })
+  }
 
   // ─── 方法 ───────────────────────────────────────────
 
@@ -28,12 +49,15 @@ export const useRoomStore = defineStore('room', () => {
    *
    * @param gameId - 游戏标识
    * @param gamePort - 游戏端口号
+   * @param gameName - 游戏名称（可选，用于日志和显示）
    */
-  async function createRoom(gameId: string, gamePort: number): Promise<void> {
+  async function createRoom(gameId: string, gamePort: number, gameName?: string): Promise<void> {
+    _ensureListeners()
+    error.value = null
     connectionStatus.value = 'connecting'
     role.value = 'host'
     try {
-      const result = await window.electronAPI.invoke('room:create', { gameId, gamePort })
+      const result = await window.electronAPI.invoke('room:create', { gameId, gamePort, gameName })
       if (result.success) {
         roomCode.value = (result.data as { roomCode: string }).roomCode
         connectionStatus.value = 'connected'
@@ -52,13 +76,22 @@ export const useRoomStore = defineStore('room', () => {
    * @param code - 6 位房间码
    */
   async function joinRoom(code: string): Promise<void> {
+    _ensureListeners()
+    error.value = null
     connectionStatus.value = 'connecting'
     role.value = 'guest'
     try {
-      const result = await window.electronAPI.invoke('room:join', code)
+      const result = await window.electronAPI.invoke('room:join', {
+        roomCode: code,
+        memberName: memberName.value || 'Player'
+      })
       if (result.success) {
         roomCode.value = code
         connectionStatus.value = 'connected'
+        // 更新隧道信息
+        const tunnelStore = useTunnelStore()
+        tunnelStore.localPort = (result.data as { localPort?: number })?.localPort ?? null
+        tunnelStore.status = 'connected'
       } else {
         throw new Error(result.error)
       }
@@ -73,7 +106,7 @@ export const useRoomStore = defineStore('room', () => {
    */
   async function leaveRoom(): Promise<void> {
     try {
-      await window.electronAPI.invoke('room:leave', roomCode.value)
+      await window.electronAPI.invoke('room:leave')
     } finally {
       reset()
     }
@@ -96,6 +129,7 @@ export const useRoomStore = defineStore('room', () => {
     members,
     connectionStatus,
     error,
+    memberName,
     isHost,
     memberCount,
     createRoom,

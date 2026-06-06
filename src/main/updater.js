@@ -186,29 +186,4 @@ async function checkForUpdates() {
   return result
 }
 
-/**
- * 功能描述：下载更新包
- *
- * TODO: 实现断点续传和进度回调
- *
- * @param {string} url - 下载 URL
- * @param {Function} onProgress - 进度回调 (received, total)
- * @returns {Promise<string>} 下载文件路径
- */
-async function downloadUpdate(url, onProgress) {
-  // TODO: 实现下载逻辑
-  throw new Error('Not implemented')
-}
-
-/**
- * 功能描述：安装更新包
- *
- * @param {string} filePath - 下载的安装包路径
- * @returns {Promise<void>}
- */
-async function installUpdate(filePath) {
-  // TODO: 实现安装逻辑
-  throw new Error('Not implemented')
-}
-
-module.exports = { initUpdater, checkForUpdates, downloadUpdate, installUpdate }
+module.exports = { initUpdater, checkForUpdates }

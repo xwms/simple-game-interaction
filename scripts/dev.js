@@ -12,7 +12,7 @@
 
 'use strict'
 
-const { spawn } = require('child_process')
+const { spawn, exec } = require('child_process')
 const path = require('path')
 const http = require('http')
 const net = require('net')
@@ -20,6 +20,40 @@ const net = require('net')
 const ROOT = path.join(__dirname, '..')
 const VITE_PORT = 5173
 const VITE_DEV_URL = `http://localhost:${VITE_PORT}`
+
+/**
+ * 功能描述：清理指定端口上的残留进程
+ *
+ * 逻辑说明：Windows 上用 netstat + taskkill，非 Windows 上用 lsof + kill。
+ *           找不到进程或执行失败时静默返回，不阻塞启动流程。
+ *
+ * @param {number} port - 端口号
+ */
+function killPort(port) {
+  return new Promise((resolve) => {
+    const findCmd = process.platform === 'win32'
+      ? `netstat -ano | findstr ":${port} " | findstr LISTEN`
+      : `lsof -ti:${port}`
+
+    exec(findCmd, { timeout: 3000 }, (err, stdout) => {
+      if (err || !stdout.trim()) return resolve()
+
+      const lines = stdout.trim().split('\n')
+      for (const line of lines) {
+        const pid = process.platform === 'win32'
+          ? line.trim().split(/\s+/).pop()
+          : line.trim()
+        if (pid && /^\d+$/.test(pid)) {
+          const killCmd = process.platform === 'win32'
+            ? `taskkill /F /PID ${pid}`
+            : `kill -9 ${pid}`
+          exec(killCmd, { timeout: 3000 }, () => {})
+        }
+      }
+      resolve()
+    })
+  })
+}
 
 /**
  * 功能描述：检查端口是否被占用
@@ -92,12 +126,12 @@ function waitForVite(viteProcess) {
 }
 
 async function main() {
-  // 检查端口占用
-  const portInUse = await isPortInUse(VITE_PORT)
-  if (portInUse) {
-    console.error(`[dev] Port ${VITE_PORT} is already in use.`)
-    console.error('[dev] This is likely a leftover Vite process from a previous run.')
-    console.error('[dev] Kill it manually: taskkill /f /pid <pid>')
+  // 清理上次残留的 Vite 进程
+  await killPort(VITE_PORT)
+
+  // 二次确认端口已释放
+  if (await isPortInUse(VITE_PORT)) {
+    console.error(`[dev] Port ${VITE_PORT} is still in use.`)
     process.exit(1)
   }
 
@@ -133,7 +167,7 @@ async function main() {
     cwd: ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,
-    env: { ...process.env, NODE_ENV: 'development', VITE_DEV_SERVER_URL: VITE_DEV_URL }
+    env: { ...process.env, NODE_ENV: 'development', VITE_DEV_SERVER_URL: VITE_DEV_URL, NODE_OPTIONS: [process.env.NODE_OPTIONS, '--import tsx'].filter(Boolean).join(' ') }
   })
 
   electron.stdout.pipe(process.stdout)
