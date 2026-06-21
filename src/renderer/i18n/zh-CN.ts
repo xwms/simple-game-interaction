@@ -3,62 +3,186 @@
  */
 
 export default {
+  common: {
+    confirm: '确认',
+    cancel: '取消'
+  },
+  notify: {
+    connectionError: '连接错误',
+    roomError: '房间错误'
+  },
   nav: {
     home: '首页',
     host: '创建房间',
     join: '加入房间',
     settings: '设置',
-    logs: '日志'
+    logs: '日志',
+    back: '返回',
+    about: '关于',
+    backToRoom: '回到房间',
+    room: '房间'
   },
   home: {
     createRoom: '创建房间',
+    createDesc: '创建房间，邀请好友',
     joinRoom: '加入房间',
+    joinDesc: '输入房间码加入',
+    detecting: '正在检测网络环境...',
+    networkFailed: '网络检测失败',
+    retry: '重新检测',
+    offline: '未联网',
     updateChecking: '正在检查更新...',
     updateLatest: '已是最新版本',
     updateAvailable: '新版本 {version} 立即更新',
-    noReleaseNotes: '暂无更新信息'
+    updateResume: '继续下载',
+    updateContent: 'v{version} 更新内容',
+    noReleaseNotes: '暂无更新信息',
+    ipv6Public: 'IPv6 公网',
+    ipv6Local: 'IPv6(本地)',
+    ipv6Unavailable: 'IPv6 不可用',
+    ipv6Reachable: 'IPv6：公网可达',
+    ipv6Available: 'IPv6：可用',
+    ipv6NotAvailable: 'IPv6：不可用',
+    downloading: '下载中 {progress}%',
+    installUpdate: '安装 v{version}'
   },
   host: {
     title: '创建房间',
     scanning: '正在扫描本机游戏...',
-    noGames: '未检测到游戏，请确保游戏服务器已启动',
-    create: '创建房间',
-    back: '返回'
+    noGames: '未检测到游戏',
+    create: '创建',
+    localGames: '本机游戏',
+    back: '返回',
+    detecting: '检测网络中...',
+    manualPort: '+ 手动输入端口',
+    manualTitle: '手动指定游戏和端口',
+    portLabel: '端口',
+    portPlaceholder: '端口号',
+    cancel: '取消',
+    confirm: '确认添加',
+    autoRefresh: '每 5 秒自动刷新',
+    running: '· 运行中',
+    gamesDetected: '{count} 个已检测',
+    portInvalid: '游戏端口无效（0），请手动输入端口号',
+    manualSuffix: '（手动）'
   },
   join: {
     title: '加入房间',
     join: '加入',
     back: '返回',
-    detecting: '正在检测网络环境并连接...'
+    detecting: '正在检测网络环境...',
+    detectFailed: '网络检测失败，将使用中继模式连接',
+    expectedPath: '预测: ',
+    portBusy: '端口 {port} 已被占用，请先关闭占用程序或修改端口'
   },
   room: {
     yourCode: '你的房间码',
+    copy: '复制',
+    copied: '已复制',
     joined: '已加入房间',
     room: '房间',
-    connectHint: '请在游戏中连接 {host}:{port}',
     disconnect: '断开连接',
-    members: '成员',
-    waitingMembers: '等待其他玩家加入...',
+    traffic: '实时流量',
+    latency: '延迟',
+    waitingGame: '请在游戏中连接 {host}:{port}',
+    gameConnected: '游戏已连接 - 端口: {port}',
+    gameDisconnected: '游戏已断开 - 端口: {port}',
     transportV6: 'IPv6 直连',
     transportP2p: 'P2P 直连',
-    transportRelay: '中继转发'
+    transportRelay: '中继转发',
+    connectedMembers: '已连接 {count} 人',
+    upload: '上传',
+    download: '下载',
+    trafficTotal: '累计',
+    peakValue: '峰值',
+    duration: '时长',
+    trendAgo: '30秒前',
+    trendNow: '现在',
+    disconnectTitle: '断开连接',
+    disconnectConfirm: '确定要断开所有连接吗？'
   },
   settings: {
     title: '设置',
+    groupGeneral: '通用',
+    groupConnection: '连接',
+    groupAppearance: '外观',
+    groupLog: '日志',
     language: '语言 / Language',
     theme: '主题',
     themeLight: '浅色',
     themeDark: '深色',
     themeAuto: '跟随系统',
     relayServer: '中继服务器地址',
+    localPort: '本地端口（加入者）',
+    localPortHint: '0 表示自动分配，设置后加入房间时使用固定端口',
+    localPortError: '端口号必须为 0-65535 之间的整数',
+    logFilePath: '日志文件路径',
+    logFileSelect: '选择目录',
+    logFileReset: '恢复默认',
     autoUpdate: '自动检查更新',
     checkUpdate: '检查更新',
+    updateLatest: '已是最新版本',
+    updateAvailable: '下载 v{version}',
+    updateDownloading: '下载中 {progress}%',
+    updateInstall: '安装 v{version}',
+    updateCheckFailed: '检查更新失败',
+    closeBehavior: '关闭按钮行为',
+    closeQuit: '退出软件',
+    closeHide: '隐藏到托盘',
+    backgroundImage: '背景图片',
+    backgroundSelect: '选择图片',
+    backgroundRemove: '移除背景',
+    backgroundOpacity: '遮罩强度',
+    cardOpacity: '卡片透明度',
+    backgroundSet: '背景图片已设置',
+    backgroundRemoved: '背景图片已移除',
+    logPathUpdated: '日志路径已更新',
+    logPathReset: '已恢复默认路径',
+    updateStarting: '正在启动安装程序...',
+    updateStarted: '安装程序已启动，请等待安装完成',
+    updateStartFailed: '安装启动失败',
+    updateError: '安装异常',
+    bgSet: '背景图片已设置',
+    bgRemoved: '背景图片已移除',
+    defaultPath: '默认路径',
     back: '返回'
   },
   status: {
     disconnected: '未连接',
     connecting: '连接中...',
-    connected: '已连接',
-    error: '连接异常'
+    connected: '连接状态',
+    error: '连接异常',
+    waiting: '等待连接'
+  },
+  logs: {
+    empty: '暂无日志',
+    clear: '清空',
+    openFile: '打开日志文件',
+    openDir: '打开日志目录',
+    scrollLatest: '↓ 最新'
+  },
+  about: {
+    title: '关于',
+    author: '作者',
+    source: '开源地址',
+    copyright: '版权',
+    softwareCopyright: '软著号'
+  },
+  nat: {
+    none: '无 NAT（公网 IP）',
+    easyNat: '简单型 NAT（可直连）',
+    hardNat: '严格型 NAT（需中继）',
+    unknown: '未知（UDP 受限）'
+  },
+  store: {
+    tunnelStartFailed: '隧道启动失败',
+    relayTimeout: '中继服务器连接超时，请检查网络或中继地址',
+    roomNotFound: '房间不存在，请检查房间码是否正确',
+    createRoomFailed: '创建房间失败',
+    joinRoomFailed: '加入房间失败'
+  },
+  notFound: {
+    message: '页面不存在',
+    backHome: '返回首页'
   }
 }

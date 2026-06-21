@@ -3,62 +3,186 @@
  */
 
 export default {
+  common: {
+    confirm: 'Confirm',
+    cancel: 'Cancel'
+  },
+  notify: {
+    connectionError: 'Connection Error',
+    roomError: 'Room Error'
+  },
   nav: {
     home: 'Home',
     host: 'Host Room',
     join: 'Join Room',
     settings: 'Settings',
-    logs: 'Logs'
+    logs: 'Logs',
+    back: 'Back',
+    about: 'About',
+    backToRoom: 'Back to Room',
+    room: 'Room'
   },
   home: {
     createRoom: 'Create Room',
+    createDesc: 'Host a game session',
     joinRoom: 'Join Room',
+    joinDesc: 'Enter a room code',
+    detecting: 'Detecting network environment...',
+    networkFailed: 'Network detection failed',
+    retry: 'Retry',
+    offline: 'Offline',
     updateChecking: 'Checking for updates...',
     updateLatest: 'Already up to date',
     updateAvailable: 'New version {version} — Update now',
-    noReleaseNotes: 'No release notes'
+    updateResume: 'Resume Download',
+    updateContent: 'v{version} Changelog',
+    noReleaseNotes: 'No release notes',
+    ipv6Public: 'IPv6',
+    ipv6Local: 'IPv6(Local)',
+    ipv6Unavailable: 'IPv6 Unavailable',
+    ipv6Reachable: 'IPv6: Public',
+    ipv6Available: 'IPv6: Available',
+    ipv6NotAvailable: 'IPv6: N/A',
+    downloading: 'Downloading {progress}%',
+    installUpdate: 'Install v{version}'
   },
   host: {
     title: 'Host Room',
     scanning: 'Scanning for local games...',
-    noGames: 'No games detected. Make sure your game server is running.',
-    create: 'Create Room',
-    back: 'Back'
+    noGames: 'No games detected',
+    create: 'Create',
+    localGames: 'Local Games',
+    back: 'Back',
+    detecting: 'Detecting network...',
+    manualPort: '+ Manual Port',
+    manualTitle: 'Manual game and port',
+    portLabel: 'Port',
+    portPlaceholder: 'Port',
+    cancel: 'Cancel',
+    confirm: 'Add',
+    autoRefresh: 'Auto-refresh every 5s',
+    running: '· Running',
+    gamesDetected: '{count} detected',
+    portInvalid: 'Invalid port (0). Please enter a port number manually',
+    manualSuffix: ' (Manual)'
   },
   join: {
     title: 'Join Room',
     join: 'Join',
     back: 'Back',
-    detecting: 'Detecting network environment...'
+    detecting: 'Detecting network environment...',
+    detectFailed: 'Network detection failed, will use relay mode',
+    expectedPath: 'Predicted: ',
+    portBusy: 'Port {port} is already in use. Please close the occupying program or change the port'
   },
   room: {
     yourCode: 'Your Room Code',
+    copy: 'Copy',
+    copied: 'Copied',
     joined: 'Joined Room',
     room: 'Room',
-    connectHint: 'Connect to {host}:{port} in your game',
     disconnect: 'Disconnect',
-    members: 'Members',
-    waitingMembers: 'Waiting for others to join...',
+    traffic: 'Live Traffic',
+    latency: 'Latency',
+    waitingGame: 'Connect to {host}:{port} in your game',
+    gameConnected: 'Game Connected - Port: {port}',
+    gameDisconnected: 'Game Disconnected - Port: {port}',
     transportV6: 'IPv6 Direct',
     transportP2p: 'P2P Direct',
-    transportRelay: 'Relay'
+    transportRelay: 'Relay',
+    connectedMembers: '{count} connected',
+    upload: 'Upload',
+    download: 'Download',
+    trafficTotal: 'Total',
+    peakValue: 'Peak',
+    duration: 'Duration',
+    trendAgo: '30s ago',
+    trendNow: 'now',
+    disconnectTitle: 'Disconnect',
+    disconnectConfirm: 'Are you sure you want to disconnect?'
   },
   settings: {
     title: 'Settings',
+    groupGeneral: 'General',
+    groupConnection: 'Connection',
+    groupAppearance: 'Appearance',
+    groupLog: 'Logs',
     language: 'Language',
     theme: 'Theme',
     themeLight: 'Light',
     themeDark: 'Dark',
     themeAuto: 'System',
     relayServer: 'Relay Server URL',
+    localPort: 'Local Port (Joiner)',
+    localPortHint: '0 = auto assign, sets a fixed port when joining',
+    localPortError: 'Port must be an integer between 0 and 65535',
+    logFilePath: 'Log File Path',
+    logFileSelect: 'Browse',
+    logFileReset: 'Reset Default',
     autoUpdate: 'Auto-check Updates',
     checkUpdate: 'Check for Updates',
+    updateLatest: 'Up to date',
+    updateAvailable: 'Download v{version}',
+    updateDownloading: 'Downloading {progress}%',
+    updateInstall: 'Install v{version}',
+    updateCheckFailed: 'Update check failed',
+    closeBehavior: 'Close Button Action',
+    closeQuit: 'Quit App',
+    closeHide: 'Hide to Tray',
+    backgroundImage: 'Background Image',
+    backgroundSelect: 'Select Image',
+    backgroundRemove: 'Remove Background',
+    backgroundOpacity: 'Overlay Opacity',
+    cardOpacity: 'Card Opacity',
+    backgroundSet: 'Background image set',
+    backgroundRemoved: 'Background image removed',
+    logPathUpdated: 'Log path updated',
+    logPathReset: 'Reset to default',
+    updateStarting: 'Starting installer...',
+    updateStarted: 'Installer started, please wait',
+    updateStartFailed: 'Failed to start installer',
+    updateError: 'Install error',
+    bgSet: 'Background image set',
+    bgRemoved: 'Background image removed',
+    defaultPath: 'Default path',
     back: 'Back'
   },
   status: {
     disconnected: 'Disconnected',
     connecting: 'Connecting...',
     connected: 'Connected',
-    error: 'Error'
+    error: 'Error',
+    waiting: 'Waiting'
+  },
+  logs: {
+    empty: 'No logs',
+    clear: 'Clear',
+    openFile: 'Open Log File',
+    openDir: 'Open Log Folder',
+    scrollLatest: '↓ Latest'
+  },
+  about: {
+    title: 'About',
+    author: 'Author',
+    source: 'Source',
+    copyright: 'Copyright',
+    softwareCopyright: 'Software Copyright No.'
+  },
+  nat: {
+    none: 'No NAT (Public IP)',
+    easyNat: 'Easy NAT (P2P capable)',
+    hardNat: 'Hard NAT (Relay required)',
+    unknown: 'Unknown (UDP restricted)'
+  },
+  store: {
+    tunnelStartFailed: 'Tunnel start failed',
+    relayTimeout: 'Relay server connection timed out. Please check your network or relay address',
+    roomNotFound: 'Room not found. Please check your room code',
+    createRoomFailed: 'Failed to create room',
+    joinRoomFailed: 'Failed to join room'
+  },
+  notFound: {
+    message: 'Page Not Found',
+    backHome: 'Back to Home'
   }
 }

@@ -208,15 +208,6 @@ export class KcpTransport extends EventEmitter implements Transport {
         const socket = dgram.createSocket({ type: 'udp4' })
         this._udpSockets.push(socket)
 
-        // 增大 UDP 缓冲区防止内核缓冲溢出（默认 64KB 仅能容纳 ~45 个 KCP 包，
-        // 在数据突发时会导致大量丢包，触发 KCP 指数退避重传造成死锁）
-        try {
-          socket.setRecvBufferSize(4 * 1024 * 1024)
-          socket.setSendBufferSize(4 * 1024 * 1024)
-        } catch (err) {
-          logger.warn(`socket[${i}] 设置 UDP 缓冲区失败: ${(err as Error).message}`)
-        }
-
         socket.on('error', (err: Error) => {
           if (hasError) return
           hasError = true
@@ -234,6 +225,13 @@ export class KcpTransport extends EventEmitter implements Transport {
         })
 
         socket.on('listening', () => {
+          // bind 完成后设置 UDP 缓冲区（bind 前调用会 ENOTSOCK）
+          try {
+            socket.setRecvBufferSize(4 * 1024 * 1024)
+            socket.setSendBufferSize(4 * 1024 * 1024)
+          } catch (err) {
+            logger.warn(`socket[${i}] 设置 UDP 缓冲区失败: ${(err as Error).message}`)
+          }
           boundCount++
           // 等待所有 socket 绑定完成后统一处理
           if (boundCount < totalSockets) return
@@ -292,7 +290,7 @@ export class KcpTransport extends EventEmitter implements Transport {
               const warnInfo = process.env.NODE_ENV !== 'production'
                 ? ` (target=${targetAddr.ip}:${targetAddr.port})` : ''
               reject(new Error(`UDP 打洞握手超时，对端无响应${warnInfo}`))
-            }, 5000)
+            }, 2500)
           } else {
             logger.info(`KCP 被动模式已就绪 (${totalSockets} sockets)`)
             resolve()
