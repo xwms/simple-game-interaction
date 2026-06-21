@@ -61,8 +61,8 @@ export class RelayClient extends EventEmitter {
   private _lastPongTime: number = 0
   /** 连续心跳发送失败次数（用于指数退避） */
   private _heartbeatFailures: number = 0
-  /** 是否为房主端（影响二进制帧解析格式） */
-  private _isHost: boolean = false
+  /** 是否为服务端端（影响二进制帧解析格式） */
+  private _isServer: boolean = false
   /** 待响应请求表 <messageId, { resolve, reject, timer }> */
   private _pendingRequests: Map<string, {
     resolve: (data: unknown) => void
@@ -85,9 +85,9 @@ export class RelayClient extends EventEmitter {
     this._config.relayUrl = url
   }
 
-  /** 设为房主端模式（改变二进制帧解析方式） */
-  setHostMode(): void {
-    this._isHost = true
+  /** 设为服务端模式（改变二进制帧解析方式） */
+  setServerMode(): void {
+    this._isServer = true
   }
 
   // ─── 公共属性 ───────────────────────────────────────
@@ -194,7 +194,7 @@ export class RelayClient extends EventEmitter {
     this._state = 'disconnected'
     this._memberId = ''
     this._roomCode = ''
-    this._isHost = false
+    this._isServer = false
     this._reconnectAttempts = 0
     this._trafficBytesSent = 0
     this._trafficBytesReceived = 0
@@ -315,9 +315,9 @@ export class RelayClient extends EventEmitter {
     this._trafficBytesSent += data.length
   }
 
-  /** 获取当前是否为房主端模式 */
-  get isHostMode(): boolean {
-    return this._isHost
+  /** 获取当前是否为服务端模式 */
+  get isServerMode(): boolean {
+    return this._isServer
   }
 
   // ─── 私有方法 ───────────────────────────────────────
@@ -469,7 +469,7 @@ export class RelayClient extends EventEmitter {
     let sourceMemberId: string | undefined
     let payload: Buffer
 
-    if (this._isHost) {
+    if (this._isServer) {
       // 房主端：[4B sourceIdLen][sourceId][4B payloadLen][payload]
       if (raw.length < 8) {
         logger.warn(`Received undersized binary frame: ${raw.length} bytes`)

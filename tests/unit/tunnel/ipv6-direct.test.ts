@@ -64,7 +64,7 @@ describe('Ipv6DirectTransport IPv6 直连传输', () => {
       peerId: 'test',
       ipv6Address: '',  // 无效地址
       ipv6Port: 0       // 无效端口
-    })).rejects.toThrow(/无效/)
+    })).rejects.toThrow(/invalid/)
   })
 
   it('send() 应发送数据到对端', async () => {
@@ -84,7 +84,8 @@ describe('Ipv6DirectTransport IPv6 直连传输', () => {
 
     await transport.send(Buffer.from([0x10, 0x20, 0x30]))
     const received = await dataPromise
-    expect(received).toEqual(Buffer.from([0x10, 0x20, 0x30]))
+    // 数据被封装为帧: [FT_DATA=0x00, 4-byte-length, data...]
+    expect(received).toEqual(Buffer.from([0x00, 0x00, 0x00, 0x00, 0x03, 0x10, 0x20, 0x30]))
   })
 
   it('disconnect() 应断开连接', async () => {
@@ -110,6 +111,6 @@ describe('Ipv6DirectTransport IPv6 直连传输', () => {
     transport = new Ipv6DirectTransport(1000)
 
     await expect(transport.send(Buffer.from([0x01])))
-      .rejects.toThrow(/未连接/)
+      .rejects.toThrow(/not connected/)
   })
 })

@@ -46,7 +46,7 @@ export class RelayPeerTransport extends EventEmitter implements Transport {
   private _trafficTimer: ReturnType<typeof setInterval> | null = null
   private _targetMemberId: string = ''
   /** 房主成员 ID（加入者侧使用，用于发送延迟探测 ping） */
-  private _hostMemberId: string = ''
+  private _serverMemberId: string = ''
   private _boundOnData: ((data: Buffer, sourceMemberId?: string) => void) | null = null
   private _boundOnDisconnected: (() => void) | null = null
   private _boundOnReconnected: (() => void) | null = null
@@ -61,13 +61,13 @@ export class RelayPeerTransport extends EventEmitter implements Transport {
   /**
    * @param relayClient - Relay 客户端
    * @param targetMemberId - 目标成员 ID（房主端填写，指定本通道对应哪个加入者）
-   * @param hostMemberId - 房主成员 ID（加入者侧填写，用于发送延迟探测 ping）
+   * @param serverMemberId - 房主成员 ID（加入者侧填写，用于发送延迟探测 ping）
    */
-  constructor(relayClient: RelayClient, targetMemberId?: string, hostMemberId?: string) {
+  constructor(relayClient: RelayClient, targetMemberId?: string, serverMemberId?: string) {
     super()
     this._relayClient = relayClient
     this._targetMemberId = targetMemberId || ''
-    this._hostMemberId = hostMemberId || ''
+    this._serverMemberId = serverMemberId || ''
   }
 
   get status(): TransportStatus {
@@ -107,7 +107,7 @@ export class RelayPeerTransport extends EventEmitter implements Transport {
     }
     this._relayClient.on(RELAY_MESSAGE_TYPES.RELAY_DATA, this._boundOnData)
 
-    // 监听重置帧：从 guest 侧通知房主重建游戏连接
+    // 监听重置帧：从 client 侧通知 server 重建游戏连接
     this._boundOnReset = (payload: { sourceMemberId: string }) => {
       if (this._targetMemberId && payload.sourceMemberId !== this._targetMemberId) {
         return
@@ -144,7 +144,7 @@ export class RelayPeerTransport extends EventEmitter implements Transport {
         } as Record<string, unknown>).catch(() => {})
       } else if (sig.type === 'latency-pong') {
         // 加入者侧：仅处理来自房主的 pong
-        if (this._hostMemberId && data.from !== this._hostMemberId) return
+        if (this._serverMemberId && data.from !== this._serverMemberId) return
         const rtt = Date.now() - (sig.time as number)
         if (rtt > 0) {
           this.emit(TRANSPORT_EVENTS.LATENCY, rtt)
@@ -252,9 +252,9 @@ export class RelayPeerTransport extends EventEmitter implements Transport {
   private _startLatencyMonitor(): void {
     this._stopLatencyMonitor()
     this._latencyTimer = setInterval(() => {
-      if (!this._hostMemberId) return
+      if (!this._serverMemberId) return
       const seq = ++this._pingSeq
-      this._relayClient.sendSignal(this._hostMemberId, {
+      this._relayClient.sendSignal(this._serverMemberId, {
         type: 'latency-ping',
         seq,
         time: Date.now()

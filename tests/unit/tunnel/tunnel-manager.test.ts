@@ -26,18 +26,18 @@ const { createMockRelayClient, createMockDetector, createMockLocalServer } = vi.
       ...makeEvented(),
       connect: vi.fn().mockResolvedValue(undefined),
       disconnect: vi.fn().mockResolvedValue(undefined),
-      createRoom: vi.fn().mockResolvedValue({ roomCode: 'ABC123', memberId: 'host-1' }),
+      createRoom: vi.fn().mockResolvedValue({ roomCode: 'ABC123', memberId: 'server-1' }),
       joinRoom: vi.fn().mockResolvedValue({
-        roomCode: 'ABC123', memberId: 'guest-1', hostId: 'host-1', gamePort: 25565,
-        hostNetworkInfo: {
+        roomCode: 'ABC123', memberId: 'client-1', serverId: 'server-1', gamePort: 25565,
+        serverNetworkInfo: {
           ipv6: { available: true, hasPublicV6: true, addresses: ['2001:db8::1'] },
           ipv4: { natType: 'easy-nat', publicIp: '1.2.3.4', publicPort: 12345, localAddresses: [] }
         },
-        members: [{ id: 'host-1', name: 'HostPlayer' }]
+        members: [{ id: 'server-1', name: 'ServerPlayer' }]
       }),
       leaveRoom: vi.fn().mockResolvedValue(undefined),
       sendSignal: vi.fn().mockResolvedValue(undefined),
-      setHostMode: vi.fn(),
+      setServerMode: vi.fn(),
       sendData: vi.fn(),
       setRelayUrl: vi.fn(),
       state: 'connected',
@@ -162,7 +162,7 @@ describe('TunnelManager 隧道管理器', () => {
     })
 
     expect(result.roomCode).toBe('ABC123')
-    expect(result.memberId).toBe('host-1')
+    expect(result.memberId).toBe('server-1')
     expect(manager.state).toBe('connected')
   })
 
@@ -214,7 +214,7 @@ describe('TunnelManager 隧道管理器', () => {
     expect(status).toHaveProperty('clientCount')
   })
 
-  it('member-joined 事件应触发 host 侧传输设置', async () => {
+  it('member-joined 事件应触发 server 侧传输设置', async () => {
     await manager.createRoom({
       gameId: 'minecraft-java',
       gameName: 'Minecraft',
@@ -223,7 +223,7 @@ describe('TunnelManager 隧道管理器', () => {
 
     // 模拟成员加入事件
     mockRelayClient.emit('member-joined', {
-      memberId: 'guest-1',
+      memberId: 'client-1',
       memberName: 'TestPlayer',
       networkInfo: {
         ipv6: { available: true, hasPublicV6: true, addresses: ['2001:db8::2'] },
@@ -247,7 +247,7 @@ describe('TunnelManager 隧道管理器', () => {
       manager.on('member-left', () => resolve())
     })
 
-    mockRelayClient.emit('member-left', { memberId: 'guest-1' })
+    mockRelayClient.emit('member-left', { memberId: 'client-1' })
     await cleanupPromise
   })
 
@@ -282,13 +282,13 @@ describe('TunnelManager 隧道管理器', () => {
     await disconnectedPromise
   })
 
-  it('createRoom() 应设置 host 模式', async () => {
+  it('createRoom() 应设置 server 模式', async () => {
     await manager.createRoom({
       gameId: 'minecraft-java',
       gameName: 'Minecraft',
       gamePort: 25565
     })
 
-    expect(mockRelayClient.setHostMode).toHaveBeenCalled()
+    expect(mockRelayClient.setServerMode).toHaveBeenCalled()
   })
 })

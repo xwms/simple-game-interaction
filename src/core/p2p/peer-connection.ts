@@ -35,8 +35,8 @@ const FT_PONG = 0x02
  * 功能描述：P2P TCP 直连传输
  *
  * 逻辑说明：Attempts direct TCP connection to peer's public IPv4 address.
- *           Active role (usually guest) initiates the TCP connection.
- *           Passive role (usually host) creates a temporary TCP server
+ *           Active role (usually client) initiates the TCP connection.
+ *           Passive role (usually server) creates a temporary TCP server
  *           listening on an ephemeral port for the incoming connection.
  *           On LAN, prefers private IP for lower latency.
  *

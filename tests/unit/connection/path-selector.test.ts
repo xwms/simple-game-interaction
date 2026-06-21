@@ -30,51 +30,51 @@ function makeNetworkInfo(ipv6: { available: boolean; hasPublicV6: boolean }, nat
 
 describe('selectPath 路径选择', () => {
   it('双方均有公网 IPv6 时 IPv6 优先', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const guest = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const client = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const paths = selectPath(server, client)
 
     expect(paths.length).toBeGreaterThanOrEqual(2)
     expect(paths[0].type).toBe('ipv6')
   })
 
   it('仅一方有 IPv6 时不应返回 IPv6 路径', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
+    const paths = selectPath(server, client)
 
     expect(paths.every(p => p.type !== 'ipv6')).toBe(true)
   })
 
   it('双方 NAT 均可穿透时 P2P 可用', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
+    const paths = selectPath(server, client)
 
     expect(paths.some(p => p.type === 'p2p')).toBe(true)
   })
 
   it('一方 HardNAT 时不应返回 P2P', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
+    const paths = selectPath(server, client)
 
     expect(paths.every(p => p.type !== 'p2p')).toBe(true)
     expect(paths[paths.length - 1].type).toBe('relay')
   })
 
   it('一方 Unknown NAT 时不应返回 P2P（保守策略）', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'unknown')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'unknown')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
+    const paths = selectPath(server, client)
 
     expect(paths.every(p => p.type !== 'p2p')).toBe(true)
   })
 
   it('双方 HardNAT 时不应返回 P2P', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
+    const paths = selectPath(server, client)
 
     expect(paths.every(p => p.type !== 'p2p')).toBe(true)
     expect(paths.length).toBe(1)
@@ -82,9 +82,9 @@ describe('selectPath 路径选择', () => {
   })
 
   it('IPv6 + EasyNAT 应返回 IPv6 > P2P > Relay', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'easy-nat')
-    const guest = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: true, hasPublicV6: true }, 'easy-nat')
+    const client = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const paths = selectPath(server, client)
 
     expect(paths.length).toBeGreaterThanOrEqual(3)
     expect(paths[0].type).toBe('ipv6')
@@ -93,9 +93,9 @@ describe('selectPath 路径选择', () => {
   })
 
   it('无 NAT（公网 IP）时 P2P 可用', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
+    const client = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
+    const paths = selectPath(server, client)
 
     expect(paths.some(p => p.type === 'p2p')).toBe(true)
   })
@@ -107,16 +107,16 @@ describe('selectPath 路径选择', () => {
   })
 
   it('一方为 null 时仅返回 Relay', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const paths = selectPath(host, null)
+    const server = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const paths = selectPath(server, null)
     expect(paths).toHaveLength(1)
     expect(paths[0].type).toBe('relay')
   })
 
   it('路径包含 description 字段', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const guest = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
-    const paths = selectPath(host, guest)
+    const server = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const client = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
+    const paths = selectPath(server, client)
 
     for (const p of paths) {
       expect(p.description).toBeTruthy()
@@ -125,11 +125,11 @@ describe('selectPath 路径选择', () => {
 
   it('所有 NAT 类型正确覆盖', () => {
     const natTypes: NatType[] = ['none', 'easy-nat', 'hard-nat', 'unknown']
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
+    const server = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
 
     for (const nat of natTypes) {
-      const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, nat)
-      const paths = selectPath(host, guest)
+      const client = makeNetworkInfo({ available: false, hasPublicV6: false }, nat)
+      const paths = selectPath(server, client)
       expect(paths.some(p => p.type === 'relay')).toBe(true)
     }
   })

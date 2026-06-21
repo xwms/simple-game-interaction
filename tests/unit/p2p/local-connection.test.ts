@@ -3,7 +3,7 @@
  *
  * 逻辑说明：验证同机/同 LAN 场景下 P2P TCP 能通过本地地址建立连接。
  *           当前问题：_buildPeerInfo() 不填充 localAddresses，
- *           且 host 在没有公网 IP 时不发送 p2p-address 信号。
+ *           且 server 在没有公网 IP 时不发送 p2p-address 信号。
  *           这些测试描述修复后的预期行为。
  */
 
@@ -178,8 +178,8 @@ describe('buildPeerInfo — 本地地址构建', () => {
 // ─── P2P 信号测试 ───────────────────────────────────────
 
 describe('P2P 地址信号 — 本地 IP 传递', () => {
-  it('host 没有公网 IP 但有本地 IP 时仍应发送 P2P 信号', () => {
-    // 模拟 _setupHostTransportForGuest 中的信号发送逻辑
+  it('server 没有公网 IP 但有本地 IP 时仍应发送 P2P 信号', () => {
+    // 模拟 _setupServerTransport 中的信号发送逻辑
     const localIps = ['192.168.1.2', '127.0.0.1']
     const localPort = 45678
     const publicIp = ''
@@ -196,7 +196,7 @@ describe('P2P 地址信号 — 本地 IP 传递', () => {
       type: 'p2p-address',
       ip: '',           // 无公网 IP
       port: 45678,      // passive 监听端口
-      localIps: ['192.168.1.2', '10.0.0.5']  // host 的本地 IP
+      localIps: ['192.168.1.2', '10.0.0.5']  // server 的本地 IP
     }
 
     expect(signal.type).toBe('p2p-address')
@@ -209,10 +209,10 @@ describe('P2P 地址信号 — 本地 IP 传递', () => {
 // ─── 完整本地连接场景测试 ───────────────────────────────
 
 describe('P2P 本地连接完整场景', () => {
-  it('guest 收到带 localIps 的信号后应填充 localAddresses', () => {
-    // 模拟 guest 侧接收信号后的行为
+  it('client 收到带 localIps 的信号后应填充 localAddresses', () => {
+    // 模拟 client 侧接收信号后的行为
     const guestPeerInfo: PeerConnectionInfo = {
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: undefined,
       localAddresses: undefined
     }
@@ -250,14 +250,14 @@ describe('P2P 本地连接完整场景', () => {
 
     const passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     const passivePort = passiveTransport.localPort!
 
     const activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
     // 无 publicAddress，仅通过 localAddresses 连接
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       localAddresses: [{ ip: '127.0.0.1', port: passivePort }]
     })
 
@@ -276,7 +276,7 @@ describe('P2P 本地连接完整场景', () => {
     transport.setRole('active')
 
     await expect(transport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       localAddresses: [],
       publicAddress: undefined
     })).rejects.toThrow(/missing|no address/)

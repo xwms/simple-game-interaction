@@ -94,8 +94,8 @@ export interface JoinRoomParams {
 export interface JoinRoomResult {
   roomCode: string
   memberId: string
-  hostId: string
-  hostNetworkInfo?: NetworkInfo
+  serverId: string
+  serverNetworkInfo?: NetworkInfo
   gamePort: number
   members: Array<{ id: string; name: string }>
 }

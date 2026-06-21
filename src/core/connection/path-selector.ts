@@ -63,26 +63,26 @@ function _canKCP(natType: NatType, mappingBehavior: MappingBehavior, hasPublicIp
  *           Relay 始终可用。
  *           调用方按列表顺序尝试，失败后尝试下一项即完成自动降级。
  *
- * @param hostNetwork - 房主网络信息
- * @param guestNetwork - 加入者网络信息
+ * @param serverNetwork - 房主网络信息
+ * @param clientNetwork - 加入者网络信息
  * @returns 按优先级排序的路径列表（至少包含 Relay）
  */
 export function selectPath(
-  hostNetwork: NetworkInfo | null,
-  guestNetwork: NetworkInfo | null
+  serverNetwork: NetworkInfo | null,
+  clientNetwork: NetworkInfo | null
 ): ConnectionPath[] {
   const paths: ConnectionPath[] = []
 
-  if (!hostNetwork || !guestNetwork) {
+  if (!serverNetwork || !clientNetwork) {
     return [
       { type: 'relay', priority: 0, description: 'Relay forwarding' }
     ]
   }
 
   // 优先级 1：IPv6 直连（双方均有公网 IPv6）
-  const hostV6 = hostNetwork.ipv6
-  const guestV6 = guestNetwork.ipv6
-  if (hostV6.hasPublicV6 && guestV6.hasPublicV6) {
+  const serverV6 = serverNetwork.ipv6
+  const clientV6 = clientNetwork.ipv6
+  if (serverV6.hasPublicV6 && clientV6.hasPublicV6) {
     paths.push({
       type: 'ipv6',
       priority: 0,
@@ -91,15 +91,15 @@ export function selectPath(
   }
 
   // 优先级 2：P2P（含 TCP 直连 + UDP KCP 打洞两种子策略）
-  const hostNat = hostNetwork.ipv4.natType
-  const guestNat = guestNetwork.ipv4.natType
-  const hostMapping = hostNetwork.ipv4.mappingBehavior
-  const guestMapping = guestNetwork.ipv4.mappingBehavior
-  const hostHasPublic = !!hostNetwork.ipv4.publicIp
-  const guestHasPublic = !!guestNetwork.ipv4.publicIp
+  const serverNat = serverNetwork.ipv4.natType
+  const clientNat = clientNetwork.ipv4.natType
+  const serverMapping = serverNetwork.ipv4.mappingBehavior
+  const clientMapping = clientNetwork.ipv4.mappingBehavior
+  const serverHasPublic = !!serverNetwork.ipv4.publicIp
+  const clientHasPublic = !!clientNetwork.ipv4.publicIp
 
-  const canP2P = _canP2P(hostNat, hostMapping, hostHasPublic) && _canP2P(guestNat, guestMapping, guestHasPublic)
-  const canKCP = _canKCP(hostNat, hostMapping, hostHasPublic) && _canKCP(guestNat, guestMapping, guestHasPublic)
+  const canP2P = _canP2P(serverNat, serverMapping, serverHasPublic) && _canP2P(clientNat, clientMapping, clientHasPublic)
+  const canKCP = _canKCP(serverNat, serverMapping, serverHasPublic) && _canKCP(clientNat, clientMapping, clientHasPublic)
 
   if (canP2P || canKCP) {
     const methods: ('tcp' | 'udp')[] = []
@@ -118,8 +118,8 @@ export function selectPath(
       priority: 1,
       description: desc,
       p2pStrategy: {
-        host: { mappingBehavior: hostMapping, filteringBehavior: hostNetwork.ipv4.filteringBehavior },
-        guest: { mappingBehavior: guestMapping, filteringBehavior: guestNetwork.ipv4.filteringBehavior },
+        server: { mappingBehavior: serverMapping, filteringBehavior: serverNetwork.ipv4.filteringBehavior },
+        client: { mappingBehavior: clientMapping, filteringBehavior: clientNetwork.ipv4.filteringBehavior },
         methods
       }
     })

@@ -127,7 +127,7 @@ describe('RelayClient 协议实现', () => {
       reconnectMaxAttempts: 1
     })
 
-    await expect(client.connect()).rejects.toThrow(/超时/)
+    await expect(client.connect()).rejects.toThrow(/timed out/)
     tcpServer.close()
   })
 
@@ -162,11 +162,11 @@ describe('RelayClient 协议实现', () => {
     })
 
     // 服务器回复 room-created
-    serverSend('room-created', { roomCode: 'ABC123', memberId: 'host-1' })
+    serverSend('room-created', { roomCode: 'ABC123', memberId: 'server-1' })
 
     const result = await resultPromise
     expect(result.roomCode).toBe('ABC123')
-    expect(result.memberId).toBe('host-1')
+    expect(result.memberId).toBe('server-1')
   })
 
   it('joinRoom() 应发送 JSON 并等待 room-joined 响应', async () => {
@@ -198,9 +198,9 @@ describe('RelayClient 协议实现', () => {
     // 服务器回复 room-joined
     serverSend('room-joined', {
       roomCode: 'ABC123',
-      memberId: 'guest-1',
-      hostId: 'host-1',
-      hostNetworkInfo: {
+      memberId: 'client-1',
+      serverId: 'server-1',
+      serverNetworkInfo: {
         ipv6: { available: false, hasPublicV6: false, addresses: [] },
         ipv4: { natType: 'none', publicIp: '1.2.3.4', publicPort: 12345 }
       }
@@ -208,8 +208,8 @@ describe('RelayClient 协议实现', () => {
 
     const result = await resultPromise
     expect(result.roomCode).toBe('ABC123')
-    expect(result.memberId).toBe('guest-1')
-    expect(result.hostNetworkInfo?.ipv4.publicIp).toBe('1.2.3.4')
+    expect(result.memberId).toBe('client-1')
+    expect(result.serverNetworkInfo?.ipv4.publicIp).toBe('1.2.3.4')
   })
 
   it('leaveRoom() 应发送 leave-room 消息', async () => {
@@ -242,7 +242,7 @@ describe('RelayClient 协议实现', () => {
     })
 
     serverSend('member-joined', {
-      memberId: 'guest-1',
+      memberId: 'client-1',
       memberName: 'TestPlayer',
       networkInfo: {
         ipv6: { available: false, hasPublicV6: false, addresses: [] },
@@ -251,7 +251,7 @@ describe('RelayClient 协议实现', () => {
     })
 
     const event = await eventPromise
-    expect(event.memberId).toBe('guest-1')
+    expect(event.memberId).toBe('client-1')
     expect(event.memberName).toBe('TestPlayer')
   })
 

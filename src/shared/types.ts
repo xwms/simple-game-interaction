@@ -118,8 +118,8 @@ export interface ConnectionPath {
   description: string
 /** P2P 连接策略（NAT 行为类型），供 P2P 传输层决定打洞方式 */
   p2pStrategy?: {
-    host: { mappingBehavior: MappingBehavior; filteringBehavior: FilteringBehavior }
-    guest: { mappingBehavior: MappingBehavior; filteringBehavior: FilteringBehavior }
+    server: { mappingBehavior: MappingBehavior; filteringBehavior: FilteringBehavior }
+    client: { mappingBehavior: MappingBehavior; filteringBehavior: FilteringBehavior }
     /** 可用的 P2P 子策略（按优先级排序） */
     methods: ('tcp' | 'udp')[]
   }

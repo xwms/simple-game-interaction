@@ -52,10 +52,10 @@ export interface PeerConnectionInfo {
  *           PathSelector 据此计算最优连接路径。
  */
 export interface ConnectionRequest {
-  hostNetwork: import('@shared/types').NetworkInfo
-  guestNetwork: import('@shared/types').NetworkInfo
-  hostId: string
-  guestId: string
+  serverNetwork: import('@shared/types').NetworkInfo
+  clientNetwork: import('@shared/types').NetworkInfo
+  serverId: string
+  clientId: string
   gamePort: number
 }
 

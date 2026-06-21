@@ -54,14 +54,14 @@ describe('RelayPeerTransport 中转传输', () => {
 
   it('connect() 应建立传输通道（中继已连接）', async () => {
     await relayClient.connect()
-    transport = new RelayPeerTransport(relayClient, 'guest-1')
+    transport = new RelayPeerTransport(relayClient, 'client-1')
 
     await transport.connect({ peerId: '' })
     expect(transport.status).toBe('connected')
   })
 
   it('connect() 应在中继未连接时自动连接', async () => {
-    transport = new RelayPeerTransport(relayClient, 'guest-1')
+    transport = new RelayPeerTransport(relayClient, 'client-1')
 
     await transport.connect({ peerId: '' })
     expect(transport.status).toBe('connected')
@@ -70,7 +70,7 @@ describe('RelayPeerTransport 中转传输', () => {
 
   it('send() 应通过 RelayClient 发送数据', async () => {
     await relayClient.connect()
-    transport = new RelayPeerTransport(relayClient, 'guest-1')
+    transport = new RelayPeerTransport(relayClient, 'client-1')
     await transport.connect({ peerId: '' })
 
     const sendSpy = vi.spyOn(relayClient, 'sendData')
@@ -78,7 +78,7 @@ describe('RelayPeerTransport 中转传输', () => {
     await transport.send(Buffer.from([0x01, 0x02, 0x03]))
     expect(sendSpy).toHaveBeenCalledWith(
       Buffer.from([0x01, 0x02, 0x03]),
-      'guest-1'
+      'client-1'
     )
 
     sendSpy.mockRestore()
@@ -86,7 +86,7 @@ describe('RelayPeerTransport 中转传输', () => {
 
   it('disconnect() 应清理事件监听', async () => {
     await relayClient.connect()
-    transport = new RelayPeerTransport(relayClient, 'guest-1')
+    transport = new RelayPeerTransport(relayClient, 'client-1')
     await transport.connect({ peerId: '' })
 
     await transport.disconnect()
@@ -107,7 +107,7 @@ describe('RelayPeerTransport 中转传输', () => {
 
   it('connect() 应注册 relay-data 事件监听', async () => {
     await relayClient.connect()
-    transport = new RelayPeerTransport(relayClient, 'guest-1')
+    transport = new RelayPeerTransport(relayClient, 'client-1')
 
     const onSpy = vi.spyOn(relayClient, 'on')
     await transport.connect({ peerId: '' })

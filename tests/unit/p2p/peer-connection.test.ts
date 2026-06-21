@@ -36,13 +36,13 @@ describe('P2pTransport TCP 直连', () => {
   it('active 方应连接到 passive 方', async () => {
     passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     passivePort = passiveTransport.localPort!
 
     activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: { ip: '127.0.0.1', port: passivePort }
     })
 
@@ -55,13 +55,13 @@ describe('P2pTransport TCP 直连', () => {
   it('active 方应能发送数据到 passive 方', async () => {
     passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     passivePort = passiveTransport.localPort!
 
     activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: { ip: '127.0.0.1', port: passivePort }
     })
 
@@ -78,13 +78,13 @@ describe('P2pTransport TCP 直连', () => {
   it('数据应能双向传输', async () => {
     passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     passivePort = passiveTransport.localPort!
 
     activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: { ip: '127.0.0.1', port: passivePort }
     })
 
@@ -106,13 +106,13 @@ describe('P2pTransport TCP 直连', () => {
   it('disconnect() 应断开连接并更新状态', async () => {
     passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     passivePort = passiveTransport.localPort!
 
     activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: { ip: '127.0.0.1', port: passivePort }
     })
 
@@ -125,7 +125,7 @@ describe('P2pTransport TCP 直连', () => {
     activeTransport.setRole('active')
 
     await expect(activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       publicAddress: { ip: '127.0.0.1', port: 1 }
     })).rejects.toThrow()
   })
@@ -134,7 +134,7 @@ describe('P2pTransport TCP 直连', () => {
     activeTransport = new P2pTransport()
     activeTransport.setRole('active')
 
-    await expect(activeTransport.connect({ peerId: 'guest-1' })).rejects.toThrow(/missing/)
+    await expect(activeTransport.connect({ peerId: 'client-1' })).rejects.toThrow(/missing/)
   })
 
   it('type 属性应为 p2p', () => {
@@ -145,14 +145,14 @@ describe('P2pTransport TCP 直连', () => {
   it('应优先使用私有地址进行连接', async () => {
     passiveTransport = new P2pTransport({ connectTimeout: 3000 })
     passiveTransport.setRole('passive')
-    await passiveTransport.connect({ peerId: 'host-1' })
+    await passiveTransport.connect({ peerId: 'server-1' })
     passivePort = passiveTransport.localPort!
 
     activeTransport = new P2pTransport({ connectTimeout: 3000 })
     activeTransport.setRole('active')
 
     await activeTransport.connect({
-      peerId: 'guest-1',
+      peerId: 'client-1',
       localAddresses: [{ ip: '127.0.0.1', port: passivePort }],
       publicAddress: { ip: '192.168.1.1', port: 9999 }
     })
