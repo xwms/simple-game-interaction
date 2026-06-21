@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WebSocketServer } from 'ws'
 import { RelayClient } from '../../../src/core/tunnel/relay-client'
-import { RelayPeerTransport } from '../../../src/core/p2p/relay-peer'
+import { RelayPeerTransport } from '../../../src/core/tunnel/transports/relay-peer'
 import type { AddressInfo } from 'net'
 
 describe('RelayPeerTransport 中转传输', () => {

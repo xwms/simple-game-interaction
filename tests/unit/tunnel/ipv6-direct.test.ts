@@ -7,8 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as net from 'net'
-import { Ipv6DirectTransport } from '../../../src/core/tunnel/ipv6-direct'
-import { TRANSPORT_EVENTS } from '../../../src/core/connection'
+import { Ipv6DirectTransport } from '../../../src/core/tunnel/transports/ipv6-direct'
+import { TRANSPORT_EVENTS } from '../../../src/core/transports'
 
 describe('Ipv6DirectTransport IPv6 直连传输', () => {
   let server: net.Server

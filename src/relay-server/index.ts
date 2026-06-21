@@ -33,8 +33,8 @@ interface ClientInfo {
 /** 房间信息 */
 interface Room {
   code: string
-  hostId: string
-  hostNetworkInfo: unknown | null
+  serverId: string
+  serverNetworkInfo: unknown | null
   gameId: string
   gamePort: number
   gameName: string
@@ -173,8 +173,8 @@ function handleCreateRoom(ws: WebSocket, client: ClientInfo, msg: Record<string,
 
   const room: Room = {
     code: roomCode,
-    hostId: memberId,
-    hostNetworkInfo: networkInfo || null,
+    serverId: memberId,
+    serverNetworkInfo: networkInfo || null,
     gameId,
     gamePort,
     gameName,
@@ -231,16 +231,16 @@ function handleJoinRoom(ws: WebSocket, client: ClientInfo, msg: Record<string, a
     data: {
       roomCode,
       memberId,
-      hostId: room.hostId,
-      hostNetworkInfo: room.hostNetworkInfo,
+      serverId: room.serverId,
+      serverNetworkInfo: room.serverNetworkInfo,
       gamePort: room.gamePort,
       members
     }
   })
 
   // 通知房主有新成员（除非房主就是加入者）
-  if (room.hostId !== memberId) {
-    const host = room.members.get(room.hostId)
+  if (room.serverId !== memberId) {
+    const host = room.members.get(room.serverId)
     if (host) {
       sendJson(host.ws, {
         type: 'member-joined',
@@ -265,7 +265,7 @@ function handleLeaveRoom(_ws: WebSocket, client: ClientInfo, _msg: Record<string
     return
   }
 
-  const wasHost = client.memberId === room.hostId
+  const wasHost = client.memberId === room.serverId
   const leftMemberId = client.memberId
   const leftMemberName = client.memberName
 
@@ -340,7 +340,7 @@ function handleBinary(ws: WebSocket, data: Buffer): void {
   const room = rooms.get(client.roomCode)
   if (!room) return
 
-  if (client.memberId === room.hostId) {
+  if (client.memberId === room.serverId) {
     // 房主 → 指定 Guest
     if (data.length < 5) return
     const targetIdLen = data.readUInt32BE(0)
@@ -358,7 +358,7 @@ function handleBinary(ws: WebSocket, data: Buffer): void {
   }
 
   // Guest → 仅房主
-  const host = room.members.get(room.hostId)
+  const host = room.members.get(room.serverId)
   if (!host || host.ws.readyState !== WebSocket.OPEN) return
 
   const memberIdBuf = Buffer.from(client.memberId, 'utf8')

@@ -25,7 +25,7 @@ describe('process-scanner 模块', () => {
   })
 
   it('应正确导入模块', async () => {
-    const mod = await import('../../../src/core/game-detect/process-scanner')
+    const mod = await import('../../../src/core/local-detect/process-scanner')
     expect(mod.processScanner).toBeDefined()
     expect(typeof mod.processScanner.isRunning).toBe('function')
   })

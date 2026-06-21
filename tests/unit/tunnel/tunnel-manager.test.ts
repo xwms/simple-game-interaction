@@ -129,12 +129,12 @@ vi.mock('../../../src/core/connection/path-selector', () => ({
   ])
 }))
 
-vi.mock('../../../src/core/network-detect/detector', () => ({
+vi.mock('../../../src/core/network/detector', () => ({
   NetworkDetector: vi.fn().mockImplementation(() => createMockDetector())
 }))
 
 // ─── 导入被测试模块 ──────────────────────────────────
-import { TunnelManager } from '../../../src/core/tunnel/tunnel-manager'
+import { TunnelManager } from '../../../src/core/tunnel/manager'
 
 describe('TunnelManager 隧道管理器', () => {
   let manager: TunnelManager

@@ -94,8 +94,8 @@ interface ClientInfo {
 
 interface Room {
   code: string
-  hostId: string
-  hostNetworkInfo: Record<string, unknown> | null
+  serverId: string
+  serverNetworkInfo: Record<string, unknown> | null
   gameId: string
   gamePort: number
   gameName: string
@@ -288,8 +288,8 @@ function handleWsCreateRoom(ws: WebSocket, client: ClientInfo, msg: Record<strin
 
   const room: Room = {
     code: roomCode,
-    hostId: memberId,
-    hostNetworkInfo: networkInfo || null,
+    serverId: memberId,
+    serverNetworkInfo: networkInfo || null,
     gameId, gamePort, gameName,
     members: new Map([[memberId, client]]),
     createdAt: Date.now(),
@@ -344,15 +344,15 @@ function handleWsJoinRoom(ws: WebSocket, client: ClientInfo, msg: Record<string,
   sendJson(ws, {
     type: 'room-joined', messageId: msg.messageId,
     data: {
-      roomCode, memberId, hostId: room.hostId,
-      hostNetworkInfo: room.hostNetworkInfo,
+      roomCode, memberId, serverId: room.serverId,
+      serverNetworkInfo: room.serverNetworkInfo,
       gamePort: room.gamePort, members
     }
   })
 
   // 通知房主
-  if (room.hostId !== memberId) {
-    const host = room.members.get(room.hostId)
+  if (room.serverId !== memberId) {
+    const host = room.members.get(room.serverId)
     if (host) {
       sendJson(host.ws, {
         type: 'member-joined',
@@ -370,7 +370,7 @@ function handleWsLeaveRoom(ws: WebSocket, client: ClientInfo, _msg: Record<strin
   const room = rooms.get(roomCode)
   if (!room) { client.roomCode = null; return }
 
-  const wasHost = client.memberId === room.hostId
+  const wasHost = client.memberId === room.serverId
   const leftId = client.memberId
   const leftName = client.memberName
 
@@ -451,7 +451,7 @@ function handleWsBinary(ws: WebSocket, data: Buffer): void {
   const room = rooms.get(client.roomCode)
   if (!room) return
 
-  if (client.memberId === room.hostId) {
+  if (client.memberId === room.serverId) {
     // 房主 → 指定 Guest
     if (data.length < 9) return
     const targetIdLen = data.readUInt32BE(0)
@@ -472,7 +472,7 @@ function handleWsBinary(ws: WebSocket, data: Buffer): void {
   }
 
   // Guest → 仅房主
-  const host = room.members.get(room.hostId)
+  const host = room.members.get(room.serverId)
   if (!host || host.ws.readyState !== WebSocket.OPEN) return
 
   const memberIdBuf = Buffer.from(client.memberId, 'utf8')
@@ -511,7 +511,7 @@ function startHttpDashboard(): void {
     if (url === '/api/rooms') {
       const roomList = Array.from(rooms.values()).map(r => ({
         code: r.code, gameName: r.gameName, gamePort: r.gamePort,
-        hostId: r.hostId, memberCount: r.members.size,
+        serverId: r.serverId, memberCount: r.members.size,
         createdAt: new Date(r.createdAt).toISOString(),
         members: Array.from(r.members.values()).map(m => ({
           id: m.memberId, name: m.memberName,
@@ -724,7 +724,7 @@ function startHttpDashboard(): void {
         }
         el.innerHTML = rooms.map(room => {
           const members = room.members.map(m => {
-            const isHost = m.id === room.hostId
+            const isHost = m.id === room.serverId
             const nat = m.networkInfo?.ipv4
             return '<div style="margin:4px 0;">' +
               '<span class="badge ' + (isHost ? 'badge-host' : 'badge-guest') + '">' + (isHost ? '房主' : '加入') + '</span> ' +

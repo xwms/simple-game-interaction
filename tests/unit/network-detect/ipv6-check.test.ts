@@ -2,7 +2,7 @@
  * IPv6 能力检测测试
  */
 import { describe, it, expect } from 'vitest'
-import { checkIpv6Capability } from '../../../src/core/network-detect/ipv6-check'
+import { checkIpv6Capability } from '../../../src/core/network/ipv6-check'
 
 describe('IPv6 地址判断', () => {
   // 测试 isPublicIpv6 函数的逻辑（通过公共 API 间接测试）

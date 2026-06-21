@@ -11,12 +11,12 @@
  */
 
 import { EventEmitter } from 'events'
-import { Logger } from '../utils/logger'
-import { TRANSPORT_EVENTS } from '../connection'
-import { RELAY_MESSAGE_TYPES } from '../tunnel/types'
-import type { Transport, PeerConnectionInfo } from '../connection'
+import { Logger } from '../../utils/logger'
+import { TRANSPORT_EVENTS } from '../../transports'
+import { RELAY_MESSAGE_TYPES } from '../types'
+import type { Transport, PeerConnectionInfo } from '../../transports'
 import type { TransportStatus, TrafficSnapshot } from '@shared/types'
-import type { RelayClient } from '../tunnel/relay-client'
+import type { RelayClient } from '../relay-client'
 
 const logger = new Logger('RelayPeer')
 

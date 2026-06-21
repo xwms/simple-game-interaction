@@ -14,7 +14,7 @@
 const { ipcMain, app, shell, BrowserWindow } = require('electron')
 const path = require('path')
 
-/** @type {import('../core/tunnel/tunnel-manager').TunnelManager|null} */
+/** @type {import('../core/tunnel/manager').TunnelManager|null} */
 let _tunnelManager = null
 
 /** @type {'light'|'dark'|'auto'} */
@@ -171,7 +171,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('network:detect', async () => {
     try {
-      const { NetworkDetector } = require('../core/network-detect/detector')
+      const { NetworkDetector } = require('../core/network/detector')
       const detector = new NetworkDetector()
       const result = await detector.detect()
       return { success: true, data: result }
@@ -187,7 +187,7 @@ function registerIpcHandlers() {
    */
   function _getTunnelManager() {
     if (!_tunnelManager) {
-      const { TunnelManager } = require('../core/tunnel/tunnel-manager')
+      const { TunnelManager } = require('../core/tunnel/manager')
       _tunnelManager = new TunnelManager()
 
       _tunnelManager.on('status', (status) => {
@@ -451,7 +451,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('game:detect-local', async () => {
     try {
-      const { detectLocalGames } = require('../core/game-detect/index')
+      const { detectLocalGames } = require('../core/local-detect/index')
       const results = await detectLocalGames()
       return { success: true, data: results }
     } catch (err) {
@@ -461,7 +461,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('game:check-port', async (_event, port) => {
     try {
-      const { portChecker } = require('../core/game-detect/port-checker')
+      const { portChecker } = require('../core/local-detect/port-checker')
       const result = await portChecker.checkTcpPort(port, 1000)
       return { success: true, data: result }
     } catch (err) {

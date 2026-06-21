@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as dgram from 'dgram'
-import { KcpTransport } from '../../../src/core/tunnel/kcp-transport'
+import { KcpTransport } from '../../../src/core/tunnel/transports/kcp-transport'
 
 /** 默认超时时间 */
 const TEST_TIMEOUT = 10000

@@ -18,9 +18,9 @@
 
 import { EventEmitter } from 'events'
 import * as net from 'net'
-import { Logger } from '../utils/logger'
-import { TRANSPORT_EVENTS, TRANSPORT_TIMEOUT_MS } from '../connection'
-import type { Transport, PeerConnectionInfo } from '../connection'
+import { Logger } from '../../utils/logger'
+import { TRANSPORT_EVENTS, TRANSPORT_TIMEOUT_MS } from '../../transports'
+import type { Transport, PeerConnectionInfo } from '../../transports'
 import type { TransportStatus, TrafficSnapshot } from '@shared/types'
 
 const logger = new Logger('Ipv6Direct')

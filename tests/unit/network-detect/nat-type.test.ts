@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as dgram from 'dgram'
-import { detectNatType } from '../../../src/core/network-detect/nat-type'
+import { detectNatType } from '../../../src/core/network/nat-type'
 import type { AddressInfo } from 'net'
 
 /**

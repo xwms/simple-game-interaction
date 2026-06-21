@@ -10,8 +10,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as net from 'net'
 import { EventEmitter } from 'events'
 import { LocalTunnelServer } from '../../../src/core/tunnel/local-server'
-import { TRANSPORT_EVENTS } from '../../../src/core/connection'
-import type { Transport, PeerConnectionInfo } from '../../../src/core/connection'
+import { TRANSPORT_EVENTS } from '../../../src/core/transports'
+import type { Transport, PeerConnectionInfo } from '../../../src/core/transports'
 import type { TransportStatus } from '../../../src/shared/types'
 
 class MockTransport extends EventEmitter implements Transport {

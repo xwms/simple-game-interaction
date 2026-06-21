@@ -2,7 +2,7 @@
  * 端口检测器测试
  */
 import { describe, it, expect } from 'vitest'
-import { portChecker } from '../../../src/core/game-detect/port-checker'
+import { portChecker } from '../../../src/core/local-detect/port-checker'
 
 describe('端口检测器', () => {
   it('未使用的端口应返回 inUse=false', async () => {

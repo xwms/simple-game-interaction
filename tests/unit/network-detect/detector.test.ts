@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { NetworkDetector } from '../../../src/core/network-detect/detector'
+import { NetworkDetector } from '../../../src/core/network/detector'
 import * as dgram from 'dgram'
 import type { AddressInfo } from 'net'
 

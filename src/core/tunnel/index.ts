@@ -2,11 +2,11 @@
  * 功能描述：隧道模块统一导出
  */
 
-export { TunnelManager } from './tunnel-manager'
+export { TunnelManager } from './manager'
 export { LocalTunnelClient } from './local-client'
 export { LocalTunnelServer } from './local-server'
 export { RelayClient } from './relay-client'
-export { Ipv6DirectTransport } from './ipv6-direct'
+export { Ipv6DirectTransport, KcpTransport, RelayPeerTransport } from './transports'
 export type {
   RelayConfig,
   RelayClientStatus,

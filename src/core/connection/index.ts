@@ -3,5 +3,4 @@
  */
 
 export { selectPath } from './path-selector'
-export { TRANSPORT_EVENTS, TRANSPORT_TIMEOUT_MS } from './types'
-export type { Transport, PeerConnectionInfo, ConnectionRequest } from './types'
+export type { ConnectionRequest } from './types'

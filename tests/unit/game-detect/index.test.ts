@@ -2,7 +2,7 @@
  * 游戏检测集成测试
  */
 import { describe, it, expect } from 'vitest'
-import { detectLocalGames, detectGame } from '../../../src/core/game-detect/index'
+import { detectLocalGames, detectGame } from '../../../src/core/local-detect/index'
 
 describe('游戏检测集成', () => {
   it('detectLocalGames 应返回所有游戏的检测结果', async () => {

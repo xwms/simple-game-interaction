@@ -12,15 +12,14 @@ import { Logger } from '../utils/logger'
 import { RelayClient } from './relay-client'
 import { LocalTunnelClient } from './local-client'
 import { LocalTunnelServer } from './local-server'
-import { Ipv6DirectTransport } from './ipv6-direct'
-import { KcpTransport } from './kcp-transport'
-import { P2pTransport, RelayPeerTransport } from '../p2p'
+import { Ipv6DirectTransport, KcpTransport, RelayPeerTransport } from './transports'
+import { P2pTransport } from '../p2p'
 import { selectPath } from '../connection'
-import { NetworkDetector } from '../network-detect/detector'
-import { TRANSPORT_EVENTS } from '../connection'
-import type { Transport, PeerConnectionInfo } from '../connection'
+import { NetworkDetector } from '../network/detector'
+import { TRANSPORT_EVENTS } from '../transports'
+import type { Transport, PeerConnectionInfo } from '../transports'
 import type { CreateRoomResult, MemberJoinedData } from './types'
-import type { NetworkInfo, ConnectionPath, TrafficSnapshot, TransportStatus, CreateRoomOptions } from '@shared/types'
+import type { NetworkInfo, ConnectionPath, TrafficSnapshot, TransportStatus, CreateRoomOptions, NatType, MappingBehavior, FilteringBehavior } from '@shared/types'
 
 const logger = new Logger('TunnelManager')
 
@@ -377,6 +376,15 @@ export class TunnelManager extends EventEmitter {
                 ip, port: data.port as number
               }))
             }
+            // 用信号中携带的真实 NAT 信息覆盖 joinResult 中的 unknown 值
+            if (typeof data.natType === 'string' && typeof data.mappingBehavior === 'string' && this._serverNetwork) {
+              this._serverNetwork.ipv4.natType = data.natType as NatType
+              this._serverNetwork.ipv4.mappingBehavior = data.mappingBehavior as MappingBehavior
+              if (typeof data.filteringBehavior === 'string') {
+                this._serverNetwork.ipv4.filteringBehavior = data.filteringBehavior as FilteringBehavior
+              }
+              logger.info(`Server NAT info applied from signal: ${data.natType}/${data.mappingBehavior}`)
+            }
             logger.info(`Pre-received P2P address signal`)
           }
         }
@@ -616,7 +624,11 @@ export class TunnelManager extends EventEmitter {
             type: 'p2p-address',
             ip: pubAddr.publicIp,
             port: p2p.localPort,
-            localIps: serverLocalIps.length > 0 ? serverLocalIps : undefined
+            localIps: serverLocalIps.length > 0 ? serverLocalIps : undefined,
+            natType: pubAddr.natType,
+            mappingBehavior: pubAddr.mappingBehavior,
+            filteringBehavior: pubAddr.filteringBehavior,
+            publicIp: pubAddr.publicIp
           }).catch((err: Error) => {
             logger.error(`Failed to send P2P address signal: ${err.message}`)
           })
@@ -732,7 +744,11 @@ export class TunnelManager extends EventEmitter {
           type: 'p2p-address',
           ip: pubAddr.publicIp,
           port: p2p.localPort,
-          localIps: serverLocalIps.length > 0 ? serverLocalIps : undefined
+          localIps: serverLocalIps.length > 0 ? serverLocalIps : undefined,
+          natType: pubAddr.natType,
+          mappingBehavior: pubAddr.mappingBehavior,
+          filteringBehavior: pubAddr.filteringBehavior,
+          publicIp: pubAddr.publicIp
         }).catch((err: Error) => {
           logger.error(`Failed to send P2P backup address signal: ${err.message}`)
         })
@@ -783,9 +799,6 @@ export class TunnelManager extends EventEmitter {
       }
       p2pBackup.on('status', onP2pConnected)
     }
-
-    this.emit('transport-changed', transport.type)
-    logger.info(`Member ${memberId} local proxy connected to 127.0.0.1:${this._gamePort}`)
 
     if (bestPath.type !== 'relay') {
       this._addRelayFallback(memberId, transport)
@@ -1287,6 +1300,7 @@ export class TunnelManager extends EventEmitter {
     })
 
     transport.on(TRANSPORT_EVENTS.LATENCY, (rtt: unknown) => {
+      logger.debug(`Latency: ${rtt}ms`)
       this.emit('latency', rtt as number)
     })
 
@@ -1385,6 +1399,15 @@ export class TunnelManager extends EventEmitter {
               this._clientPeerInfo.localAddresses = sig.localIps.map((ip: string) => ({
                 ip, port: sig.port as number
               }))
+            }
+            // 用信号中携带的真实 NAT 信息覆盖 joinResult 中的 unknown 值
+            if (typeof sig.natType === 'string' && typeof sig.mappingBehavior === 'string' && this._serverNetwork) {
+              this._serverNetwork.ipv4.natType = sig.natType as NatType
+              this._serverNetwork.ipv4.mappingBehavior = sig.mappingBehavior as MappingBehavior
+              if (typeof sig.filteringBehavior === 'string') {
+                this._serverNetwork.ipv4.filteringBehavior = sig.filteringBehavior as FilteringBehavior
+              }
+              logger.info(`Server NAT info applied from signal: ${sig.natType}/${sig.mappingBehavior}`)
             }
           }
           logger.info('Server P2P address signal received')

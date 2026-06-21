@@ -9,9 +9,9 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import type { NetworkInfo } from '@shared/types'
-import type { PeerConnectionInfo } from '../../../src/core/connection/types'
-import { toNetworkInfo } from '../../../src/core/network-detect/types'
-import type { NatCheckResult, Ipv6CheckResult } from '../../../src/core/network-detect/types'
+import type { PeerConnectionInfo } from '../../../src/core/transports/types'
+import { toNetworkInfo } from '../../../src/core/network/types'
+import type { NatCheckResult, Ipv6CheckResult } from '../../../src/core/network/types'
 
 // ─── toNetworkInfo 测试 ─────────────────────────────────
 
@@ -88,7 +88,7 @@ describe('toNetworkInfo — localAddresses 传播', () => {
 // _buildPeerInfo 是 TunnelManager 的私有方法。
 // 这里用独立的函数测试其核心逻辑（提取为纯函数后可复用）。
 
-import { buildPeerInfo } from '../../../src/core/tunnel/tunnel-manager'
+import { buildPeerInfo } from '../../../src/core/tunnel/manager'
 
 describe('buildPeerInfo — 本地地址构建', () => {
   it('应包含本地地址列表', () => {

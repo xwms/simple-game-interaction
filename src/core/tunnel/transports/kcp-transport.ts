@@ -33,10 +33,10 @@
 import { EventEmitter } from 'events'
 import * as crypto from 'crypto'
 import * as dgram from 'dgram'
-import { Logger } from '../utils/logger'
-import { TRANSPORT_EVENTS } from '../connection'
-import { Kcp } from '../utils/kcp'
-import type { Transport, PeerConnectionInfo } from '../connection'
+import { Logger } from '../../utils/logger'
+import { TRANSPORT_EVENTS } from '../../transports'
+import { Kcp } from '../../utils/kcp'
+import type { Transport, PeerConnectionInfo } from '../../transports'
 import type { TransportStatus, TrafficSnapshot } from '@shared/types'
 
 const logger = new Logger('KcpTransport')

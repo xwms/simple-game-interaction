@@ -15,7 +15,7 @@ import WebSocket from 'ws'
 import { Logger } from '../utils/logger'
 import { BINARY_FRAME_HEADER_SIZE, DEFAULT_RELAY_CONFIG, RELAY_MESSAGE_TYPES } from './types'
 import type { RelayConfig, RelayClientStatus, CreateRoomParams, CreateRoomResult, JoinRoomParams, JoinRoomResult, MemberJoinedData } from './types'
-import type { TrafficSnapshot } from '@shared/types'
+import type { NetworkInfo, TrafficSnapshot } from '@shared/types'
 
 const logger = new Logger('RelayClient')
 
@@ -238,13 +238,21 @@ export class RelayClient extends EventEmitter {
   async joinRoom(roomCode: string, params: JoinRoomParams): Promise<JoinRoomResult> {
     this._assertConnected()
 
-    const result = await this._sendRequest<JoinRoomResult>(
+    const result = await this._sendRequest<Record<string, unknown>>(
       RELAY_MESSAGE_TYPES.JOIN_ROOM,
       { roomCode, ...params }
     )
-    this._memberId = result.memberId
+    this._memberId = result.memberId as string
     this._roomCode = roomCode
-    return result
+    // 中继服务器返回 hostId/hostNetworkInfo（旧命名），映射为 serverId/serverNetworkInfo
+    return {
+      roomCode: result.roomCode as string,
+      memberId: result.memberId as string,
+      serverId: (result.serverId || result.hostId) as string,
+      serverNetworkInfo: (result.serverNetworkInfo || result.hostNetworkInfo) as (NetworkInfo | undefined),
+      gamePort: result.gamePort as number,
+      members: result.members as Array<{ id: string; name: string }>
+    }
   }
 
   /**

@@ -15,8 +15,8 @@
 import { EventEmitter } from 'events'
 import * as net from 'net'
 import { Logger } from '../utils/logger'
-import { TRANSPORT_EVENTS } from '../connection'
-import type { Transport } from '../connection'
+import { TRANSPORT_EVENTS } from '../transports'
+import type { Transport } from '../transports'
 import type { TransportStatus } from '@shared/types'
 
 const logger = new Logger('LocalClient')

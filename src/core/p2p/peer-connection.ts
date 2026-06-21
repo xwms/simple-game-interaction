@@ -18,9 +18,9 @@
 import { EventEmitter } from 'events'
 import * as net from 'net'
 import { Logger } from '../utils/logger'
-import { TRANSPORT_EVENTS } from '../connection'
+import { TRANSPORT_EVENTS } from '../transports'
 import { DEFAULT_P2P_CONFIG } from './types'
-import type { Transport, PeerConnectionInfo } from '../connection'
+import type { Transport, PeerConnectionInfo } from '../transports'
 import type { TransportStatus, TrafficSnapshot } from '@shared/types'
 import type { P2PConfig, P2PRole } from './types'
 

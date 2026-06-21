@@ -4,7 +4,7 @@
  * 逻辑说明：补充 shared/types.ts 中 NetworkInfo 的内部类型。
  *           这些类型仅在网络检测模块内部使用。
  *
- * @module network-detect/types
+ * @module network/types
  */
 
 import type { NatType, NetworkInfo, MappingBehavior, FilteringBehavior } from '@shared/types'

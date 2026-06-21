@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest'
-import { KcpTransport } from '../../../src/core/tunnel/kcp-transport'
-import { TRANSPORT_EVENTS } from '../../../src/core/connection'
+import { KcpTransport } from '../../../src/core/tunnel/transports/kcp-transport'
+import { TRANSPORT_EVENTS } from '../../../src/core/transports'
 
 describe('KcpTransport 大数据量传输', () => {
   const transports: KcpTransport[] = []
