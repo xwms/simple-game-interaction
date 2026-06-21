@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm test
+        env:
+          CI: true
+
+  build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test]
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            script: dist:linux
+            artifact: SGI-*-linux.*
+          - os: macos-latest
+            script: dist:mac
+            artifact: SGI-*-mac.*
+          - os: windows-latest
+            script: dist:win
+            artifact: SGI-Setup-*-win.exe
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Build package (${{ matrix.os }})
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.os }}
+          path: release/${{ matrix.artifact }}
