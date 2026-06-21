@@ -40,5 +40,6 @@ electron-dev1/
 electron-dev2/
 %USERPROFILE%/electron-dev2/
 
-# Resources (icons, fonts — local build assets)
-resources/
+# Resources (icons only)
+resources/font*
+resources/lib/
