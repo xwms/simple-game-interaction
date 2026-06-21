@@ -61,8 +61,19 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
   it('客户端连接后应计入 clientCount', async () => {
     const client = net.createConnection({ host: '127.0.0.1', port: localPort })
     await new Promise<void>((resolve) => client.on('connect', () => resolve()))
-    // 等待服务端处理 connection 事件（不同平台事件循环时序不同）
-    await new Promise<void>((resolve) => setImmediate(resolve))
+    // 等待服务端处理 connection 事件（CI 环境下事件循环时序有差异）
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for client')), 3000)
+      const check = () => {
+        if (server.clientCount >= 1) {
+          clearTimeout(timeout)
+          resolve()
+        } else {
+          setImmediate(check)
+        }
+      }
+      setImmediate(check)
+    })
 
     expect(server.clientCount).toBe(1)
     client.destroy()
@@ -85,7 +96,19 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
   it('transport 收到数据应转发到所有客户端', async () => {
     const client = net.createConnection({ host: '127.0.0.1', port: localPort })
     await new Promise<void>((resolve) => client.on('connect', () => resolve()))
-    await new Promise<void>((resolve) => setImmediate(resolve))
+    // 确保服务端已完成 connection 处理
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for client')), 3000)
+      const check = () => {
+        if (server.clientCount >= 1) {
+          clearTimeout(timeout)
+          resolve()
+        } else {
+          setImmediate(check)
+        }
+      }
+      setImmediate(check)
+    })
 
     const dataPromise = new Promise<Buffer>((resolve) => {
       client.on('data', (data: Buffer) => resolve(data))
@@ -118,14 +141,30 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
   })
 
   it('多个客户端可同时连接', async () => {
+    const connectedClients: string[] = []
+    server.on('client-connected', (data: { remoteAddr: string }) => {
+      connectedClients.push(data.remoteAddr)
+    })
+
     const client1 = net.createConnection({ host: '127.0.0.1', port: localPort })
     const client2 = net.createConnection({ host: '127.0.0.1', port: localPort })
     await Promise.all([
       new Promise<void>((resolve) => client1.on('connect', () => resolve())),
       new Promise<void>((resolve) => client2.on('connect', () => resolve()))
     ])
-    // 等待服务端处理两个 connection 事件
-    await new Promise<void>((resolve) => setImmediate(resolve))
+    // 等待服务端处理两个 connection 事件（CI 环境下事件循环时序有差异）
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for 2 clients')), 3000)
+      const check = () => {
+        if (connectedClients.length >= 2) {
+          clearTimeout(timeout)
+          resolve()
+        } else {
+          setImmediate(check)
+        }
+      }
+      setImmediate(check)
+    })
 
     expect(server.clientCount).toBe(2)
     client1.destroy()
