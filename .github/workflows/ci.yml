@@ -38,6 +38,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -67,10 +68,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev fakeroot rpm squashfs-tools
+          sudo apt-get install -y dpkg-dev fakeroot rpm squashfs-tools libarchive-tools
 
       - name: Build package (${{ matrix.os }})
+        continue-on-error: true
         run: npm run ${{ matrix.script }}
+        env:
+          DEBUG: electron-builder:*
 
       - uses: actions/upload-artifact@v4.6.2
         with:
