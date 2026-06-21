@@ -16,7 +16,7 @@
 import WebSocket from 'ws'
 import * as net from 'net'
 
-const RELAY_URL = 'ws://127.0.0.1:9800'
+const RELAY_URL = 'ws://159.75.150.37:9800'
 const ROOM_CODE = process.argv[4] || 'TEST12'
 const GAME_HOST = process.argv[2] || '127.0.0.1'
 const GAME_PORT = parseInt(process.argv[3] || '25565', 10)

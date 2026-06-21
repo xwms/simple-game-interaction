@@ -1,17 +1,19 @@
 /**
  * 连接状态指示器组件
  *
- * 使用方式：<ConnectionStatus :status="status" :transport="transport" />
+ * 使用方式：<ConnectionStatus :status="status" />
  * 逻辑说明：根据连接状态显示不同颜色和文字。
  */
 
 <script setup lang="ts">
 import type { TunnelStatus } from '@shared/types'
+import { useI18n } from 'vue-i18n'
 
 defineProps<{
   status: TunnelStatus
-  transport?: 'ipv6' | 'p2p' | 'relay' | null
 }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -26,18 +28,10 @@ defineProps<{
       }"
     />
     <span class="text-sm">
-      <template v-if="status === 'disconnected'">未连接</template>
-      <template v-else-if="status === 'connecting'">连接中...</template>
-      <template v-else-if="status === 'connected'">
-        已连接
-        <template v-if="transport">
-          ·
-          <template v-if="transport === 'ipv6'">IPv6 直连</template>
-          <template v-else-if="transport === 'p2p'">P2P 直连</template>
-          <template v-else>中继转发</template>
-        </template>
-      </template>
-      <template v-else>连接异常</template>
+      <template v-if="status === 'disconnected'">{{ t('status.disconnected') }}</template>
+      <template v-else-if="status === 'connecting'">{{ t('status.connecting') }}</template>
+      <template v-else-if="status === 'connected'">{{ t('status.connected') }}</template>
+      <template v-else>{{ t('status.error') }}</template>
     </span>
   </div>
 </template>

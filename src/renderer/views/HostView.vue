@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useRoomStore } from '../store/room'
 import GameCard from '../components/GameCard.vue'
 import { useNetworkDetect, natTypeLabel, inferConnectionPath } from '../composables/useNetworkDetect'
@@ -17,9 +18,13 @@ import { useNetworkDetect, natTypeLabel, inferConnectionPath } from '../composab
 const router = useRouter()
 const roomStore = useRoomStore()
 const { status, result, refresh } = useNetworkDetect()
+const { t } = useI18n()
 
-// 进入页面时清除残留错误
 onMounted(() => {
+  if (roomStore.roomCode) {
+    router.replace('/room/' + roomStore.roomCode)
+    return
+  }
   roomStore.error = null
 })
 
@@ -54,9 +59,7 @@ async function scanGames(): Promise<void> {
     const res = await window.electronAPI.invoke('game:detect-local')
     if (res.success) {
       const all = (res.data as any[]) || []
-      // 只显示检测到的游戏（进程运行或端口开放）
-      games.value = all.filter((g: any) => g.running || g.portOpen)
-      // 按运行中优先排序
+      games.value = all.filter((g: any) => g.running && g.portOpen)
       games.value.sort((a: any, b: any) => (b.running ? 1 : 0) - (a.running ? 1 : 0))
     }
   } finally {
@@ -71,8 +74,7 @@ function addManualGame(): void {
   const selected = availableGames.find((g) => g.id === manualGameId.value)
   if (!selected) return
 
-  const port = manualPort.value || selected.defaultPort
-  // 检查是否已存在同类手动项
+  const port = Number(manualPort.value) || selected.defaultPort
   const existIdx = games.value.findIndex(
     (g: any) => g.gameId === `manual-${selected.id}` && g.port === port
   )
@@ -84,7 +86,7 @@ function addManualGame(): void {
 
   const entry = {
     gameId: `manual-${selected.id}`,
-    name: `${selected.name}（手动）`,
+    name: `${selected.name}${t('host.manualSuffix')}`,
     port,
     running: true,
     portOpen: true,
@@ -103,16 +105,13 @@ async function handleCreate(): Promise<void> {
   if (!selectedGame.value || isCreating.value) return
   isCreating.value = true
 
-  // 先从自动检测列表中找，再从手动列表找
   let game = games.value.find((g: any) => g.gameId === selectedGame.value)
-  // 手动添加的 gameId 带 manual- 前缀，传给 store 时去掉
   const actualGameId = selectedGame.value.replace(/^manual-/, '')
   const port = game?.port ?? 0
   const name = game?.gameName ?? actualGameId
 
-  console.log(`创建房间: gameId=${actualGameId} port=${port} name=${name}`)
   if (port === 0) {
-    roomStore.error = '游戏端口无效（0），请手动输入端口号'
+    roomStore.error = t('host.portInvalid')
     isCreating.value = false
     return
   }
@@ -126,7 +125,6 @@ async function handleCreate(): Promise<void> {
 }
 
 // ─── 生命周期 ───────────────────────────────────────
-// 页面挂载时自动扫描，之后每 5 秒刷新
 scanGames()
 refreshTimer = setInterval(scanGames, 5000)
 
@@ -139,102 +137,121 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="host-view p-6">
-    <h2 class="text-xl font-bold mb-4">创建房间</h2>
+  <div class="host-view p-6 flex justify-center">
+    <div class="w-full max-w-lg">
+      <h2 class="text-xl font-bold mb-5">{{ t('host.title') }}</h2>
 
-    <!-- 网络检测状态（从全局共享状态读取） -->
-    <div v-if="status === 'detecting'" class="mb-4 text-xs text-gray-400 flex items-center gap-2">
-      <n-spin size="small" />
-      检测网络中...
-    </div>
-    <div v-else-if="status === 'done' && result" class="mb-4 text-xs text-gray-400 flex items-center gap-3">
-      <span class="flex items-center gap-1">
-        <span class="inline-block w-2 h-2 rounded-full"
-          :class="result.ipv6.available ? 'bg-green-500' : 'bg-gray-400'">
-        </span>
-        IPv6 {{ result.ipv6.hasPublicV6 ? '公网' : result.ipv6.available ? '可用' : '×' }}
-      </span>
-      <span>NAT {{ natTypeLabel(result.ipv4) }}</span>
-      <span class="text-primary">{{ inferConnectionPath(result).label }}</span>
-      <button class="text-gray-400 hover:text-gray-600" @click="refresh" title="重新检测">↻</button>
-    </div>
+      <!-- 网络检测状态 -->
+      <div class="mb-4">
+        <div v-if="status === 'detecting'" class="card px-4 py-3 flex items-center gap-3 text-sm">
+          <n-spin size="small" />
+          <span class="text-gray-500">{{ t('host.detecting') }}</span>
+        </div>
+        <div v-else-if="status === 'error'" class="card px-4 py-3 flex items-center gap-2 text-sm text-red-400">
+          <span class="iconfont icon-wangluozhongduan text-lg" />
+          <span style="color:#ef4444!important">{{ t('home.offline') }}</span>
+          <button class="ml-auto text-primary hover:underline" @click="refresh">{{ t('home.retry') }}</button>
+        </div>
+        <div v-else-if="status === 'done' && result" class="card px-4 py-3 flex items-center gap-3 text-sm text-gray-500">
+          <span v-if="inferConnectionPath(result).type !== 'none'" class="flex items-center gap-1.5">
+            <span class="inline-block w-2 h-2 rounded-full" :class="result.ipv6.available ? 'bg-green-500' : 'bg-gray-400'" />
+            <span class="text-gray-600 dark:text-gray-300">{{ result.ipv6.hasPublicV6 ? t('home.ipv6Public') : result.ipv6.available ? t('home.ipv6Available') : t('home.ipv6Unavailable') }}</span>
+          </span>
+          <template v-if="natTypeLabel(result.ipv4)">
+            <span class="text-gray-300 dark:text-gray-600">|</span>
+            <span class="text-gray-600 dark:text-gray-300">{{ natTypeLabel(result.ipv4) }}</span>
+            <span class="text-gray-300 dark:text-gray-600">|</span>
+          </template>
+          <span class="font-medium" :class="inferConnectionPath(result).type === 'none' ? 'text-red-500' : 'text-primary'">{{ t('join.expectedPath') }}{{ inferConnectionPath(result).label }}</span>
+          <button class="ml-auto w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" @click="refresh" :title="t('home.retry')">
+            <span class="iconfont icon-shuaxin" />
+          </button>
+        </div>
+      </div>
 
-    <div v-if="isScanning" class="text-gray-500 mb-4 flex items-center gap-2">
-      <n-spin size="small" />
-      正在扫描本机游戏...
-    </div>
+      <!-- 游戏扫描 / 列表 -->
+      <div class="card p-5 mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ t('host.localGames') }}</span>
+          <span v-if="!isScanning" class="text-xs text-gray-400">{{ t('host.gamesDetected', { count: games.length }) }}</span>
+        </div>
 
-    <div v-else-if="games.length === 0" class="text-gray-500 mb-4">
-      未检测到游戏，请确保游戏服务器已启动
-    </div>
+        <div v-if="isScanning" class="text-gray-500 text-sm flex items-center gap-2 py-4 justify-center">
+          <n-spin size="small" />
+          {{ t('host.scanning') }}
+        </div>
 
-    <div v-else class="space-y-3 mb-4">
-      <GameCard
-        v-for="game in games"
-        :key="game.gameId"
-        :game="game"
-        :selected="selectedGame === game.gameId"
-        @select="selectedGame = game.gameId"
-      />
-    </div>
+        <div v-else-if="games.length === 0" class="text-gray-400 text-sm text-center py-6">
+          {{ t('host.noGames') }}
+          <div class="mt-2">
+            <button class="text-xs text-primary hover:underline" @click="showManualInput = true">{{ t('host.manualPort') }}</button>
+          </div>
+        </div>
 
-    <!-- 错误提示 -->
-    <div v-if="roomStore.error" class="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-600 dark:text-red-400">
-      {{ roomStore.error }}
-    </div>
+        <div v-else class="space-y-2">
+          <GameCard
+            v-for="game in games"
+            :key="game.gameId"
+            :game="game"
+            :selected="selectedGame === game.gameId"
+            @select="selectedGame = game.gameId"
+          />
+        </div>
 
-    <!-- 手动输入端口 -->
-    <div class="mb-6">
-      <button
-        v-if="!showManualInput"
-        class="text-xs text-primary hover:underline"
-        @click="showManualInput = true"
-      >
-        + 手动输入端口
-      </button>
+        <!-- 手动添加入口 -->
+        <div v-if="games.length > 0 && !showManualInput" class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <button class="text-xs text-primary hover:underline inline-flex items-center gap-1" @click="showManualInput = true">
+            {{ t('host.manualPort') }}
+          </button>
+        </div>
+      </div>
 
-      <div v-else class="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 space-y-3">
-        <div class="text-xs text-gray-500 mb-1">手动指定游戏和端口</div>
-        <div class="flex gap-2">
-          <select
-            v-model="manualGameId"
-            class="flex-1 px-3 py-2 text-sm border rounded-lg bg-white dark:bg-gray-700"
-          >
-            <option v-for="g in availableGames" :key="g.id" :value="g.id">
-              {{ g.name }}
-            </option>
-          </select>
-          <input
-            v-model.number="manualPort"
-            type="number"
-            class="w-28 px-3 py-2 text-sm border rounded-lg bg-white dark:bg-gray-700"
-            placeholder="端口号"
-            min="1"
-            max="65535"
+      <!-- 手动输入面板 -->
+      <div v-if="showManualInput" class="card p-4 mb-4 border border-dashed border-primary/30 dark:border-primary/20">
+        <div class="text-xs text-gray-500 mb-3">{{ t('host.manualTitle') }}</div>
+        <div class="flex gap-2 mb-3">
+          <n-select
+            v-model:value="manualGameId"
+            :options="availableGames.map(g => ({ label: g.name, value: g.id }))"
+            class="flex-1"
+            size="small"
+          />
+          <n-input-number
+            v-model:value="manualPort"
+            :placeholder="t('host.portPlaceholder')"
+            class="w-28"
+            size="small"
+            :min="1" :max="65535"
+            :precision="0"
           />
         </div>
         <div class="flex gap-2">
-          <n-button size="small" @click="showManualInput = false">取消</n-button>
-          <n-button size="small" type="primary" @click="addManualGame">确认添加</n-button>
+          <n-button size="small" @click="showManualInput = false">{{ t('host.cancel') }}</n-button>
+          <n-button size="small" @click="addManualGame">{{ t('host.confirm') }}</n-button>
         </div>
       </div>
-    </div>
 
-    <div class="flex gap-3">
-      <n-button @click="router.push('/')">返回</n-button>
-      <n-button
-        type="primary"
-        :disabled="!selectedGame"
-        :loading="isCreating"
-        @click="handleCreate"
-      >
-        创建房间
-      </n-button>
-    </div>
+      <!-- 错误提示 -->
+      <n-alert v-if="roomStore.error" type="error" :bordered="false" class="mb-4" closable @close="roomStore.error = null">
+        {{ roomStore.error }}
+      </n-alert>
 
-    <!-- 自动刷新提示 -->
-    <div class="mt-4 text-xs text-gray-400 text-center">
-      每 5 秒自动刷新
+      <!-- 操作按钮 -->
+      <div class="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700">
+        <n-button @click="router.push('/')">{{ t('host.back') }}</n-button>
+        <n-button
+          :disabled="!selectedGame || isCreating"
+          :loading="isCreating"
+          @click="handleCreate"
+        >
+          {{ t('host.create') }}
+        </n-button>
+      </div>
+
+      <!-- 自动刷新提示 -->
+      <div class="mt-4 text-xs text-gray-400 text-center">
+        {{ t('host.autoRefresh') }}
+      </div>
     </div>
   </div>
 </template>

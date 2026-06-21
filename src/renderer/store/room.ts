@@ -7,42 +7,58 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { MemberInfo } from '@shared/types'
-
 import { useTunnelStore } from './tunnel'
+import { useSettingsStore } from './settings'
+import { i18n } from '../i18n'
+
+/** 核心引擎/中继服务器返回的已知错误 → i18n key 映射 */
+const KNOWN_ERROR_PREFIXES: [string, string][] = [
+  ['Relay 连接超时', 'store.relayTimeout'],
+  ['IPv6 连接超时', 'store.relayTimeout'],
+  ['连接超时', 'store.relayTimeout'],
+  ['[room-not-found]', 'store.roomNotFound']
+]
+
+function _translateError(msg: string): string {
+  for (const [prefix, key] of KNOWN_ERROR_PREFIXES) {
+    if (msg.startsWith(prefix)) return i18n.global.t(key)
+  }
+  return msg
+}
 
 export const useRoomStore = defineStore('room', () => {
   // ─── 状态 ───────────────────────────────────────────
   const roomCode = ref<string>('')
   const role = ref<'host' | 'guest' | null>(null)
-  const members = ref<MemberInfo[]>([])
   const connectionStatus = ref<'idle' | 'connecting' | 'connected' | 'disconnected'>('idle')
   const error = ref<string | null>(null)
   const memberName = ref<string>('')
+  const hostGameId = ref<string>('')
+  const hostGamePort = ref<number>(0)
+  const memberCount = ref(0)
 
   // ─── 计算属性 ───────────────────────────────────────
   const isHost = computed(() => role.value === 'host')
-  const memberCount = computed(() => members.value.length)
 
-  // ─── IPC 监听器（仅注册一次） ────────────────────────
+  // ─── IPC 监听器 ─────────────────────────────────────
   let _initialized = false
+  const _cleanups: (() => void)[] = []
+
   function _ensureListeners(): void {
     if (_initialized) return
     _initialized = true
-
-    window.electronAPI.on('room:member-joined', (member: unknown) => {
-      const m = member as MemberInfo
-      const idx = members.value.findIndex(x => x.id === m.id)
-      if (idx === -1) members.value.push(m)
-    })
-
-    window.electronAPI.on('room:member-left', (data: unknown) => {
-      const d = data as { memberId: string }
-      members.value = members.value.filter(m => m.id !== d.memberId)
-    })
+    const c1 = window.electronAPI.on('room:member-joined', () => { memberCount.value++ })
+    _cleanups.push(c1)
+    const c2 = window.electronAPI.on('room:member-left', () => { memberCount.value = Math.max(0, memberCount.value - 1) })
+    _cleanups.push(c2)
   }
 
-  // ─── 方法 ───────────────────────────────────────────
+  function destroy(): void {
+    _cleanups.forEach(fn => fn())
+    _cleanups.length = 0
+    _initialized = false
+    reset()
+  }
 
   /**
    * 功能描述：创建房间
@@ -56,8 +72,14 @@ export const useRoomStore = defineStore('room', () => {
     error.value = null
     connectionStatus.value = 'connecting'
     role.value = 'host'
+    hostGameId.value = gameId
+    hostGamePort.value = gamePort
     try {
-      const result = await window.electronAPI.invoke('room:create', { gameId, gamePort, gameName })
+      const settings = useSettingsStore()
+      const result = await window.electronAPI.invoke('room:create', {
+        gameId, gamePort, gameName,
+        relayUrl: settings.relayServerUrl
+      })
       if (result.success) {
         roomCode.value = (result.data as { roomCode: string }).roomCode
         connectionStatus.value = 'connected'
@@ -65,7 +87,7 @@ export const useRoomStore = defineStore('room', () => {
         throw new Error(result.error)
       }
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : '创建房间失败'
+      error.value = err instanceof Error ? _translateError(err.message) : i18n.global.t('store.createRoomFailed')
       connectionStatus.value = 'disconnected'
     }
   }
@@ -81,9 +103,12 @@ export const useRoomStore = defineStore('room', () => {
     connectionStatus.value = 'connecting'
     role.value = 'guest'
     try {
+      const settings = useSettingsStore()
       const result = await window.electronAPI.invoke('room:join', {
         roomCode: code,
-        memberName: memberName.value || 'Player'
+        memberName: memberName.value || 'Player',
+        relayUrl: settings.relayServerUrl,
+        localPort: settings.localPort || 0
       })
       if (result.success) {
         roomCode.value = code
@@ -96,7 +121,7 @@ export const useRoomStore = defineStore('room', () => {
         throw new Error(result.error)
       }
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : '加入房间失败'
+      error.value = err instanceof Error ? _translateError(err.message) : i18n.global.t('store.joinRoomFailed')
       connectionStatus.value = 'disconnected'
     }
   }
@@ -118,20 +143,24 @@ export const useRoomStore = defineStore('room', () => {
   function reset(): void {
     roomCode.value = ''
     role.value = null
-    members.value = []
     connectionStatus.value = 'idle'
     error.value = null
+    memberCount.value = 0
+    hostGameId.value = ''
+    hostGamePort.value = 0
   }
 
   return {
     roomCode,
     role,
-    members,
     connectionStatus,
     error,
     memberName,
     isHost,
     memberCount,
+    hostGameId,
+    hostGamePort,
+    destroy,
     createRoom,
     joinRoom,
     leaveRoom,

@@ -63,6 +63,35 @@ export interface TunnelStatusReport {
 }
 
 /**
+ * 功能描述：从 NetworkInfo 构建 PeerConnectionInfo
+ *
+ * 逻辑说明：提取对端网络信息中的公网地址、IPv6 地址和本地地址列表，
+ *           填充到 PeerConnectionInfo 供 Transport 连接使用。
+ *           本地地址列表使用 publicPort 作为端口（同机连接时监听端口与映射端口一致）。
+ *
+ * @param networkInfo - 对端网络信息
+ * @returns 连接信息，null 表示无可用的网络信息
+ */
+export function buildPeerInfo(networkInfo: NetworkInfo | null): PeerConnectionInfo | null {
+  if (!networkInfo) return null
+
+  return {
+    peerId: '',
+    ipv6Address: networkInfo.ipv6.addresses[0],
+    ipv6Port: undefined,
+    publicAddress: networkInfo.ipv4.publicIp
+      ? { ip: networkInfo.ipv4.publicIp, port: networkInfo.ipv4.publicPort }
+      : undefined,
+    localAddresses: networkInfo.ipv4.localAddresses.length > 0
+      ? networkInfo.ipv4.localAddresses.map(ip => ({
+          ip,
+          port: networkInfo.ipv4.publicPort
+        }))
+      : []
+  }
+}
+
+/**
  * 功能描述：隧道管理器
  *
  * 逻辑说明：封装整个连接生命周期。对外提供 createRoom / joinRoom / leaveRoom 方法，
@@ -122,15 +151,15 @@ export class TunnelManager extends EventEmitter {
     this._relayClient = new RelayClient({ relayUrl: this._config.relayUrl })
 
     this._relayClient.on('connected', () => {
-      logger.info('Relay 连接已建立')
+      logger.info('[TunnelManager] Relay connection established')
     })
 
     this._relayClient.on('disconnected', () => {
-      logger.warn('Relay 连接已断开')
+      logger.warn('[TunnelManager] Relay connection disconnected')
     })
 
     this._relayClient.on('error', (err: Error) => {
-      logger.error(`Relay 客户端错误: ${err.message}`)
+      logger.error(`[TunnelManager] Relay client error: ${err.message}`)
       this.emit('error', err)
     })
 
@@ -142,7 +171,7 @@ export class TunnelManager extends EventEmitter {
       if (sig?.type === 'close-game-conn') {
         const client = this._guestClients.get(data.from)
         if (client) {
-          logger.debug(`收到 close-game-conn 信令, 关闭游戏连接 (成员 ${data.from})`)
+          logger.debug(`Received close-game-conn signal, closing game connection (member ${data.from})`)
           client.closeConnection()
         }
       }
@@ -153,22 +182,22 @@ export class TunnelManager extends EventEmitter {
           // 降级到 member-joined 时的 networkInfo
           const guestPublicIp = (sig.publicIp as string) || this._guestNetworkInfos.get(data.from)?.ipv4.publicIp
           if (guestPublicIp) {
-            logger.info(`KCP 外部探针触发: 成员 ${data.from} 公网 ${guestPublicIp}:${sig.kcpPort}`)
+            logger.info(`KCP external probe triggered: member ${data.from} public ${guestPublicIp}:${sig.kcpPort}`)
             kcp.addExternalTarget(guestPublicIp, sig.kcpPort)
           } else {
-            logger.warn(`KCP 收到 kcp-port 但无法获取成员 ${data.from} 的公网 IP`)
+            logger.warn(`KCP received kcp-port but could not get member ${data.from}'s public IP`)
           }
         }
       }
     })
 
     this._relayClient.on('member-joined', (data: MemberJoinedData) => {
-      logger.info(`成员加入: ${data.memberName} (${data.memberId})`)
+      logger.info(`[TunnelManager] Member joined: ${data.memberName} (${data.memberId})`)
 
       // 房主侧：根据网络检测结果选择最优路径，为加入者创建传输通道
       if (this._role === 'host') {
         this._setupHostTransportForGuest(data.memberId, data.networkInfo).catch((err) => {
-          logger.error(`成员 ${data.memberId} 传输通道建立失败: ${(err as Error).message}`)
+          logger.error(`Failed to establish transport for member ${data.memberId}: ${(err as Error).message}`)
         })
       }
 
@@ -180,12 +209,12 @@ export class TunnelManager extends EventEmitter {
     })
 
     this._relayClient.on('member-left', (data: { memberId: string }) => {
-      logger.info(`成员离开: ${data.memberId}`)
+      logger.info(`[TunnelManager] Member left: ${data.memberId}`)
 
       // 房主侧：清理该成员的资源
       if (this._role === 'host') {
         this._cleanupGuestTransport(data.memberId).catch((err) => {
-          logger.error(`清理成员 ${data.memberId} 资源失败: ${(err as Error).message}`)
+          logger.error(`Failed to cleanup resources for member ${data.memberId}: ${(err as Error).message}`)
         })
       }
 
@@ -204,9 +233,9 @@ export class TunnelManager extends EventEmitter {
     // 在断开间隙（用户重开游戏前）发送，无竞争
     this._localServer.on('all-clients-disconnected', () => {
       if (this._role === 'guest' && this._hostMemberId) {
-        logger.info('所有游戏客户端已断开, 通知房主关闭游戏连接')
+        logger.info('All game clients disconnected, notifying host to close game connection')
         this._relayClient.sendSignal(this._hostMemberId, { type: 'close-game-conn' }).catch((err: Error) => {
-          logger.error(`发送 close-game-conn 信号失败: ${err.message}`)
+          logger.error(`Failed to send close-game-conn signal: ${err.message}`)
         })
       }
     })
@@ -217,7 +246,7 @@ export class TunnelManager extends EventEmitter {
       if (this._role === 'guest') {
         if (this._currentTransport instanceof KcpTransport) {
           this._currentTransport.sendControl('reset')
-          logger.debug('已发送 KCP 带内重置信号')
+          logger.debug('KCP in-band reset signal sent')
         }
       }
     })
@@ -275,7 +304,7 @@ export class TunnelManager extends EventEmitter {
     })
 
     this._setState('connected')
-    logger.info(`房间已创建: ${roomResult.roomCode}`)
+    logger.info(`[TunnelManager] Room created: ${roomResult.roomCode}`)
 
     this.emit('connected', {
       localPort: this._gamePort,
@@ -314,7 +343,7 @@ export class TunnelManager extends EventEmitter {
     const earlySignals: Array<{ from: string; signalData: unknown }> = []
     const onEarlySignal = (data: { from: string; signalData: unknown }): void => {
       const sigType = ((data as { signalData?: { type?: string } }).signalData?.type) || 'unknown'
-      logger.debug(`[SIGNAL] 收到信号: from=${data.from}, type=${sigType}`)
+      logger.debug(`[Signal] Signal received: from ${data.from}, type: ${sigType}`)
       earlySignals.push(data)
     }
     this._relayClient.on('signal', onEarlySignal)
@@ -338,11 +367,17 @@ export class TunnelManager extends EventEmitter {
       for (const sig of earlySignals) {
         if (sig.from !== joinResult.hostId) continue
         const data = sig.signalData as Record<string, unknown>
-        if (data?.type === 'p2p-address' && typeof data.ip === 'string' && typeof data.port === 'number') {
+        if (data?.type === 'p2p-address' && typeof data.port === 'number') {
           if (this._guestPeerInfo) {
-            this._guestPeerInfo.publicAddress = { ip: data.ip, port: data.port }
-            const p2pPreInfo = process.env.NODE_ENV !== 'production' ? ` [${data.ip}]:${data.port}` : ''
-            logger.info(`预接收 P2P 地址信号${p2pPreInfo}`)
+            if (data.ip && typeof data.ip === 'string') {
+              this._guestPeerInfo.publicAddress = { ip: data.ip, port: data.port }
+            }
+            if (Array.isArray(data.localIps) && data.localIps.length > 0) {
+              this._guestPeerInfo.localAddresses = data.localIps.map((ip: string) => ({
+                ip, port: data.port as number
+              }))
+            }
+            logger.info(`Pre-received P2P address signal`)
           }
         }
         if (data?.type === 'ipv6-address' && typeof data.address === 'string' && typeof data.port === 'number') {
@@ -350,14 +385,14 @@ export class TunnelManager extends EventEmitter {
             this._guestPeerInfo.ipv6Address = data.address
             this._guestPeerInfo.ipv6Port = data.port
             const v6PreInfo = process.env.NODE_ENV !== 'production' ? ` [${data.address}]:${data.port}` : ''
-            logger.info(`预接收 IPv6 地址信号${v6PreInfo}`)
+            logger.info(`Pre-received IPv6 address signal${v6PreInfo}`)
           }
         }
         if (data?.type === 'kcp-address' && typeof data.ip === 'string' && typeof data.port === 'number') {
           if (this._guestPeerInfo) {
             this._guestPeerInfo.kcpAddress = { ip: data.ip, port: data.port }
             const kcpPreInfo = process.env.NODE_ENV !== 'production' ? ` [${data.ip}]:${data.port}` : ''
-            logger.info(`预接收 KCP 地址信号${kcpPreInfo}`)
+            logger.info(`Pre-received KCP address signal${kcpPreInfo}`)
           }
         }
       }
@@ -374,9 +409,9 @@ export class TunnelManager extends EventEmitter {
         signalWaits.push(this._waitForP2pSignal(joinResult.hostId, 1500).then(() => {}))
         signalWaits.push(this._waitForKcpSignal(joinResult.hostId, 1500).then(() => {}))
       }
-      logger.debug(`[SIGNAL] 等待信号: IPv6=${!!(hostV6?.hasPublicV6 && guestV6.hasPublicV6)}, P2P/KCP=${this._guestNetwork!.ipv4.publicIp !== ''}`)
+      logger.debug(`[Signal] Waiting for signals — IPv6: ${!!(hostV6?.hasPublicV6 && guestV6.hasPublicV6)}, P2P/KCP: ${this._guestNetwork!.ipv4.publicIp !== ''}`)
       await Promise.all(signalWaits)
-      logger.info('地址信号接收完成, 开始路径选择')
+      logger.info('Address signal collection complete, starting path selection')
     } finally {
       this._relayClient.removeListener('signal', onEarlySignal)
     }
@@ -391,7 +426,7 @@ export class TunnelManager extends EventEmitter {
     //    非 KCP 传输（IPv6/Relay）无需额外重置（TCP 断开即清空）。
     this._localServer.on('client-connected', () => {
       if (this._currentTransport) {
-        logger.debug(`游戏客户端已连接, transport=${this._currentTransport.type}`)
+        logger.debug(`Game client connected, transport: ${this._currentTransport.type}`)
       }
     })
 
@@ -399,7 +434,7 @@ export class TunnelManager extends EventEmitter {
     const allocPort = await this._localServer.start(localPort || 0)
 
     this._setState('connected')
-    logger.info(`已加入房间 ${roomCode}, 本地端口: ${allocPort}`)
+    logger.info(`[TunnelManager] Joined room ${roomCode}, local port: ${allocPort}`)
 
     this.emit('connected', {
       localPort: allocPort,
@@ -477,7 +512,7 @@ export class TunnelManager extends EventEmitter {
     this._kcpReconnectAttempts = 0
     this._setState('idle')
     this.emit('disconnected')
-    logger.info('已离开房间')
+    logger.info('[TunnelManager] Left room')
   }
 
   /**
@@ -513,7 +548,7 @@ export class TunnelManager extends EventEmitter {
       // 已连接，无需清理
       if (p2p.status === 'connected') return
 
-      logger.debug(`P2P 传输超时未连接，关闭服务器 (成员 ${memberId})`)
+      logger.debug(`P2P transport timeout, closing server (member ${memberId})`)
 
       // 从备选列表移除
       if (this._p2pBackups.get(memberId) === p2p) {
@@ -554,7 +589,7 @@ export class TunnelManager extends EventEmitter {
     guestNetwork: NetworkInfo
   ): Promise<void> {
     if (this._guestTransports.has(memberId)) {
-      logger.info(`成员 ${memberId} 已有传输通道, 跳过`)
+      logger.info(`Member ${memberId} already has a transport, skipping`)
       return
     }
 
@@ -575,18 +610,20 @@ export class TunnelManager extends EventEmitter {
         await p2p.connect({ peerId: memberId })
 
         const pubAddr = this._hostNetwork!.ipv4
-        if (pubAddr.publicIp && p2p.localPort) {
+        const hostLocalIps = pubAddr.localAddresses || []
+        if ((pubAddr.publicIp || hostLocalIps.length > 0) && p2p.localPort) {
           this._relayClient.sendSignal(memberId, {
             type: 'p2p-address',
             ip: pubAddr.publicIp,
-            port: p2p.localPort
+            port: p2p.localPort,
+            localIps: hostLocalIps.length > 0 ? hostLocalIps : undefined
           }).catch((err: Error) => {
-            logger.error(`发送 P2P 地址信号失败: ${err.message}`)
+            logger.error(`Failed to send P2P address signal: ${err.message}`)
           })
         }
 
         transport = p2p
-        logger.info(`[P2P 通道已开启] 成员 ${memberId} 监听 0.0.0.0:${p2p.localPort}`)
+        logger.info(`[P2P] Channel opened — member ${memberId} listening on 0.0.0.0:${p2p.localPort}`)
         this._startP2pTimeout(memberId, p2p, 60000)
       }
 
@@ -606,7 +643,7 @@ export class TunnelManager extends EventEmitter {
               ip,
               port
             }).catch((err: Error) => {
-              logger.error(`发送 KCP 地址信号失败: ${err.message}`)
+              logger.error(`Failed to send KCP address signal: ${err.message}`)
             })
           }
         }
@@ -621,10 +658,10 @@ export class TunnelManager extends EventEmitter {
 
         if (!hasTcp) {
           transport = kcp
-          logger.info(`[KCP 通道已开启] 成员 ${memberId} 监听 0.0.0.0:${kcp.localPort}`)
+          logger.info(`[KCP] Channel opened — member ${memberId} listening on 0.0.0.0:${kcp.localPort}`)
           const kcpTimer = setTimeout(() => {
             if (kcp.status !== 'connected') {
-              logger.warn(`成员 ${memberId} KCP 连接超时`)
+              logger.warn(`Member ${memberId} KCP connection timeout`)
               kcp.disconnect().catch(() => {})
               this._guestTransports.delete(memberId)
             }
@@ -636,7 +673,7 @@ export class TunnelManager extends EventEmitter {
             }
           })
         } else {
-          logger.info(`[KCP 备选通道已开启] 成员 ${memberId} 监听 0.0.0.0:${kcp.localPort}`)
+          logger.info(`[KCP] Backup channel opened — member ${memberId} listening on 0.0.0.0:${kcp.localPort}`)
           const tcpTransport = transport!
           kcp.on('status', (status: TransportStatus) => {
             if (status !== 'connected') return
@@ -645,12 +682,12 @@ export class TunnelManager extends EventEmitter {
             if (!cl || cur !== tcpTransport) return
 
             this._clearP2pTimeout(memberId)
-            logger.info(`成员 ${memberId} 切换到 KCP 传输 (TCP 降级)`)
+            logger.info(`Member ${memberId} switched to KCP transport (TCP fallback)`)
             cl.setTransport(kcp)
             const pendingCount = kcp.drainPendingData((data: Buffer) => {
               kcp.emit(TRANSPORT_EVENTS.DATA, data)
             })
-            if (pendingCount > 0) logger.debug(`KCP 切换: 回放 ${pendingCount} 条缓冲数据到 LocalClient`)
+            if (pendingCount > 0) logger.debug(`KCP switch: replaying ${pendingCount} buffered data packets to LocalClient`)
             this._guestTransports.set(memberId, kcp)
             this._setupTransportEvents(kcp)
             tcpTransport.disconnect().catch(() => {})
@@ -664,7 +701,7 @@ export class TunnelManager extends EventEmitter {
         }
       }
     } else if (bestPath.type === 'ipv6') {
-      logger.info(`为成员 ${memberId} 建立传输通道 (IPv6 主, P2P 备选)`)
+      logger.info(`Setting up transport for member ${memberId} (IPv6 primary, P2P backup)`)
 
       const ipv6Transport = new Ipv6DirectTransport()
       ipv6Transport.setRole('passive')
@@ -677,11 +714,11 @@ export class TunnelManager extends EventEmitter {
           address: v6Addr,
           port: ipv6Transport.localPort
         }).catch((err: Error) => {
-          logger.error(`发送 IPv6 地址信号失败: ${err.message}`)
+          logger.error(`Failed to send IPv6 address signal: ${err.message}`)
         })
       }
 
-      logger.info(`[IPv6 通道已开启] 成员 ${memberId} 监听 :::${ipv6Transport.localPort}`)
+      logger.info(`[IPv6] Channel opened — member ${memberId} listening on :::${ipv6Transport.localPort}`)
       transport = ipv6Transport
 
       const p2p = new P2pTransport({ connectTimeout: 30000 })
@@ -689,22 +726,24 @@ export class TunnelManager extends EventEmitter {
       await p2p.connect({ peerId: memberId })
 
       const pubAddr = this._hostNetwork!.ipv4
-      if (pubAddr.publicIp && p2p.localPort) {
+      const hostLocalIps = pubAddr.localAddresses || []
+      if ((pubAddr.publicIp || hostLocalIps.length > 0) && p2p.localPort) {
         this._relayClient.sendSignal(memberId, {
           type: 'p2p-address',
           ip: pubAddr.publicIp,
-          port: p2p.localPort
+          port: p2p.localPort,
+          localIps: hostLocalIps.length > 0 ? hostLocalIps : undefined
         }).catch((err: Error) => {
-          logger.error(`发送 P2P 备选地址信号失败: ${err.message}`)
+          logger.error(`Failed to send P2P backup address signal: ${err.message}`)
         })
       }
 
       p2pBackup = p2p
       this._p2pBackups.set(memberId, p2p)
-      logger.info(`[P2P 备选通道已开启] 成员 ${memberId} 监听 0.0.0.0:${p2p.localPort} (30s 超时)`)
+      logger.info(`[P2P] Backup channel opened — member ${memberId} listening on 0.0.0.0:${p2p.localPort} (30s timeout)`)
       this._startP2pTimeout(memberId, p2p, 30000)
     } else {
-      logger.info(`为成员 ${memberId} 建立传输通道 (中继转发)`)
+      logger.info(`Setting up transport for member ${memberId} (relay forwarding)`)
       transport = new RelayPeerTransport(this._relayClient, memberId)
       await transport.connect({ peerId: memberId })
     }
@@ -717,7 +756,7 @@ export class TunnelManager extends EventEmitter {
     this._guestClients.set(memberId, client)
     this._setupTransportEvents(transport)
     this.emit('transport-changed', transport.type)
-    logger.info(`成员 ${memberId} 本地代理已连接到 127.0.0.1:${this._gamePort}`)
+    logger.info(`Member ${memberId} local proxy connected to 127.0.0.1:${this._gamePort}`)
 
     // 主 P2P 连接成功时清除超时定时器
     if (transport instanceof P2pTransport) {
@@ -734,7 +773,7 @@ export class TunnelManager extends EventEmitter {
         if (!cl || cur !== transport) return
 
         this._clearP2pTimeout(memberId)
-        logger.info(`成员 ${memberId} 切换到 P2P 传输 (IPv6 备选)`)
+        logger.info(`Member ${memberId} switched to P2P transport (IPv6 backup)`)
         cl.setTransport(p2pBackup!)
         this._guestTransports.set(memberId, p2pBackup!)
         this._p2pBackups.delete(memberId)
@@ -746,7 +785,7 @@ export class TunnelManager extends EventEmitter {
     }
 
     this.emit('transport-changed', transport.type)
-    logger.info(`成员 ${memberId} 本地代理已连接到 127.0.0.1:${this._gamePort}`)
+    logger.info(`Member ${memberId} local proxy connected to 127.0.0.1:${this._gamePort}`)
 
     if (bestPath.type !== 'relay') {
       this._addRelayFallback(memberId, transport)
@@ -776,7 +815,7 @@ export class TunnelManager extends EventEmitter {
       // 已切换到中继，跳过
       if (this._guestTransports.get(memberId) === relayFallback) return
 
-      logger.info(`成员 ${memberId} 切换到中继传输 (主传输降级)`)
+      logger.info(`Member ${memberId} switched to relay transport (primary transport degraded)`)
       relayFallback.removeListener(TRANSPORT_EVENTS.DATA, onRelayData)
       this._relayFallbacks.delete(memberId)
 
@@ -829,7 +868,7 @@ export class TunnelManager extends EventEmitter {
     this._guestKcpTransports.delete(memberId)
     this._guestNetworkInfos.delete(memberId)
 
-    logger.info(`成员 ${memberId} 的传输资源已清理`)
+    logger.info(`Transport resources cleaned up for member ${memberId}`)
   }
 
   /**
@@ -847,7 +886,7 @@ export class TunnelManager extends EventEmitter {
     const hostMapping = this._hostNetwork?.ipv4.mappingBehavior || 'unknown'
     const guestMapping = this._guestNetwork?.ipv4.mappingBehavior || 'unknown'
     const descriptions = this._availablePaths.map(p => p.description).join(' → ')
-    logger.info(`路径选择: [${descriptions}] (host NAT: ${hostNat}/${hostMapping}, guest NAT: ${guestNat}/${guestMapping})`)
+    logger.info(`Path selection: [${descriptions}] (host NAT: ${hostNat}/${hostMapping}, guest NAT: ${guestNat}/${guestMapping})`)
 
     // 顺序尝试每个路径，失败后自动切换到下一路径
     for (let i = 0; i < this._availablePaths.length; i++) {
@@ -859,10 +898,10 @@ export class TunnelManager extends EventEmitter {
       } catch (err) {
         if (i < this._availablePaths.length - 1) {
           const nextDesc = this._availablePaths[i + 1].description
-          logger.warn(`${this._availablePaths[i].description} 连接失败: ${(err as Error).message}, 降级到 ${nextDesc}`)
+          logger.warn(`${this._availablePaths[i].description} connection failed: ${(err as Error).message}, falling back to ${nextDesc}`)
         } else {
           this._setState('error')
-          const finalErr = new Error('所有连接方式均不可用')
+          const finalErr = new Error('All connection methods unavailable')
           this.emit('error', finalErr)
           throw finalErr
         }
@@ -879,7 +918,7 @@ export class TunnelManager extends EventEmitter {
    * @throws 创建或连接 Transport 失败
    */
   private async _connectWithPath(): Promise<void> {
-    logger.info(`尝试连接: ${this._currentPath!.description}`)
+    logger.info(`Attempting connection: ${this._currentPath!.description}`)
 
     // 断开旧传输（先置 null 防止 STATUS 事件触发重复降级）
     if (this._currentTransport) {
@@ -902,7 +941,7 @@ export class TunnelManager extends EventEmitter {
         transport.emit(TRANSPORT_EVENTS.DATA, data)
       })
       if (drained > 0) {
-        logger.debug(`KCP 回放 ${drained} 条缓冲数据到 LocalServer`)
+        logger.debug(`KCP replaying ${drained} buffered data packets to LocalServer`)
       }
     }
 
@@ -910,7 +949,7 @@ export class TunnelManager extends EventEmitter {
 
     this._setState('connected')
     this.emit('transport-changed', transport.type)
-    logger.info(`${this._currentPath!.description} 连接成功`)
+    logger.info(`${this._currentPath!.description} connection successful`)
   }
 
   /**
@@ -968,7 +1007,7 @@ export class TunnelManager extends EventEmitter {
             // KCP 成功 → 创建中继备用
             if (this._role === 'guest') {
               this._addGuestRelayFallback(kcp).catch((err: Error) => {
-                logger.warn(`创建中继备用失败: ${err.message}`)
+                logger.warn(`Failed to create relay fallback: ${err.message}`)
               })
             }
             return kcp
@@ -988,7 +1027,7 @@ export class TunnelManager extends EventEmitter {
         }
       }
 
-      logger.info(`P2P 并行竞争: ${pending.filter(p => p.transport === winner)[0]?.method || 'unknown'} 胜出`)
+      logger.info(`P2P parallel race: ${pending.filter(p => p.transport === winner)[0]?.method || 'unknown'} won`)
       return winner
     } catch (err) {
       // 所有方法均失败：确保所有 transport 已清理
@@ -999,7 +1038,7 @@ export class TunnelManager extends EventEmitter {
         p.promise.catch(() => {})
       }
       lastError = err as Error
-      throw lastError || new Error('P2P 连接失败')
+      throw lastError || new Error('P2P connection failed')
     }
   }
 
@@ -1023,7 +1062,7 @@ export class TunnelManager extends EventEmitter {
     // KCP 成功 → 创建中继备用（加入者侧）
     if (this._role === 'guest') {
       this._addGuestRelayFallback(kcp).catch((err: Error) => {
-        logger.warn(`创建中继备用失败: ${err.message}`)
+        logger.warn(`Failed to create relay fallback: ${err.message}`)
       })
     }
 
@@ -1052,7 +1091,7 @@ export class TunnelManager extends EventEmitter {
           kcpPort: localPort,
           publicIp
         }).catch((err: Error) => {
-          logger.error(`发送 KCP 端口信号失败: ${err.message}`)
+          logger.error(`Failed to send KCP port signal: ${err.message}`)
         })
       })
       kcp.on('public-addr', (pubPort: number, pubIp: string | null) => {
@@ -1062,7 +1101,7 @@ export class TunnelManager extends EventEmitter {
           kcpPort: pubPort,
           publicIp
         }).catch((err: Error) => {
-          logger.error(`发送 KCP 端口更新信号失败: ${err.message}`)
+          logger.error(`Failed to send KCP port update signal: ${err.message}`)
         })
       })
     }
@@ -1092,7 +1131,7 @@ export class TunnelManager extends EventEmitter {
       // 主传输仍连接，忽略中继数据
       if (primaryTransport.status === 'connected') return
 
-      logger.info('加入者切换到中继传输 (KCP 断开)')
+      logger.info('Guest switched to relay transport (KCP disconnected)')
       relayFallback.removeListener(TRANSPORT_EVENTS.DATA, onRelayData)
 
       const oldTransport = this._currentTransport
@@ -1110,7 +1149,7 @@ export class TunnelManager extends EventEmitter {
     }
 
     relayFallback.on(TRANSPORT_EVENTS.DATA, onRelayData)
-    logger.debug('中继备用传输已建立')
+    logger.debug('Relay fallback transport established')
   }
 
   /**
@@ -1125,7 +1164,7 @@ export class TunnelManager extends EventEmitter {
    */
   private async _tryKcpReconnect(): Promise<void> {
     if (this._kcpReconnectAttempts >= KCP_RECONNECT_MAX_RETRIES) {
-      logger.warn('KCP 重连已达最大次数, 切换到 degrade')
+      logger.warn('KCP reconnect reached max attempts, switching to degrade')
       this._kcpReconnectAttempts = 0
       this._degrade().catch((err) => {
         this.emit('error', err)
@@ -1135,7 +1174,7 @@ export class TunnelManager extends EventEmitter {
 
     const delay = KCP_RECONNECT_BASE_DELAY * Math.pow(2, this._kcpReconnectAttempts)
     this._kcpReconnectAttempts++
-    logger.info(`KCP 重连第 ${this._kcpReconnectAttempts} 次 (等待 ${delay}ms)`)
+    logger.info(`KCP reconnect attempt ${this._kcpReconnectAttempts} (waiting ${delay}ms)`)
 
     await new Promise(resolve => setTimeout(resolve, delay))
 
@@ -1159,15 +1198,15 @@ export class TunnelManager extends EventEmitter {
         kcp.emit(TRANSPORT_EVENTS.DATA, data)
       })
       if (drained > 0) {
-        logger.debug(`KCP 重连: 回放 ${drained} 条缓冲数据到 LocalServer`)
+        logger.debug(`KCP reconnect: replaying ${drained} buffered data packets to LocalServer`)
       }
 
       this._setupTransportEvents(kcp)
       this._kcpReconnectAttempts = 0
-      logger.info('KCP 重连成功')
+      logger.info('KCP reconnection successful')
       this.emit('transport-changed', 'p2p')
     } catch (err) {
-      logger.warn(`KCP 重连失败: ${(err as Error).message}`)
+      logger.warn(`KCP reconnection failed: ${(err as Error).message}`)
       // 递归重试
       await this._tryKcpReconnect()
     }
@@ -1181,24 +1220,24 @@ export class TunnelManager extends EventEmitter {
   private async _degrade(): Promise<void> {
     // 防止重复降级（断开旧传输时触发的 STATUS 事件可能导致递归）
     if (this._isDegrading) {
-      logger.warn('正在降级中, 跳过重复降级请求')
+      logger.warn('Already degrading, skipping duplicate degrade request')
       return
     }
 
     this._isDegrading = true
     try {
-      const fromPath = this._currentPath?.description || '未知'
+      const fromPath = this._currentPath?.description || 'unknown'
       const nextIndex = this._currentPathIndex + 1
 
       if (nextIndex >= this._availablePaths.length) {
         this._setState('error')
-        const err = new Error('所有连接方式均不可用')
+        const err = new Error('All connection methods unavailable')
         this.emit('error', err)
         return
       }
 
       this.emit('degrading', { from: fromPath, to: this._availablePaths[nextIndex].description })
-      logger.info(`降级: ${fromPath} → ${this._availablePaths[nextIndex].description}`)
+      logger.info(`Degrading: ${fromPath} → ${this._availablePaths[nextIndex].description}`)
 
       // 顺序尝试后续每个路径，避免递归 degrade
       for (let i = nextIndex; i < this._availablePaths.length; i++) {
@@ -1208,13 +1247,13 @@ export class TunnelManager extends EventEmitter {
           await this._connectWithPath()
           return
         } catch (err) {
-          logger.warn(`${this._availablePaths[i].description} 降级失败: ${(err as Error).message}`)
+          logger.warn(`${this._availablePaths[i].description} degrade failed: ${(err as Error).message}`)
         }
       }
 
       // 所有路径均失败
       this._setState('error')
-      this.emit('error', new Error('所有连接方式均不可用'))
+      this.emit('error', new Error('All connection methods unavailable'))
     } finally {
       this._isDegrading = false
     }
@@ -1258,29 +1297,29 @@ export class TunnelManager extends EventEmitter {
         if (this._currentTransport !== transport) return
         // 房主侧不管理路径选择
         if (this._availablePaths.length === 0) {
-          logger.warn(`房主传输断开, 等待重连`)
+          logger.warn(`Host transport disconnected, waiting for reconnect`)
           return
         }
         // 传输短暂断开，等待 RelayClient 自动重连
-        logger.warn(`传输断开, 等待自动重连...`)
+        logger.warn(`Transport disconnected, waiting for auto-reconnect...`)
         return
       }
       if (s === 'error') {
         if (this._currentTransport !== transport) return
         if (this._availablePaths.length === 0) {
-          logger.warn(`房主传输错误, 等待加入者重新连接`)
+          logger.warn(`Host transport error, waiting for guest to reconnect`)
           return
         }
         // KCP 传输错误时尝试重连，而非直接降级
         if (transport instanceof KcpTransport && this._role === 'guest') {
           this._tryKcpReconnect().catch((err) => {
-            logger.error(`KCP 重连失败: ${(err as Error).message}`)
+            logger.error(`KCP reconnection failed: ${(err as Error).message}`)
           })
           return
         }
-        logger.warn(`Transport 异常: ${s}`)
+        logger.warn(`Transport error: ${s}`)
         if (transport instanceof KcpTransport) {
-          logger.info('KCP 传输断开, 跳过 degrade (房主/单路径场景)')
+          logger.info('KCP transport disconnected, skipping degrade (host/single-path scenario)')
           return
         }
         this._degrade().catch((err) => {
@@ -1297,7 +1336,7 @@ export class TunnelManager extends EventEmitter {
     })
 
     transport.on(TRANSPORT_EVENTS.ERROR, (err: unknown) => {
-      logger.error('Transport 错误', (err as Error).message)
+      logger.error(`Transport error: ${(err as Error).message}`)
     })
   }
 
@@ -1308,19 +1347,7 @@ export class TunnelManager extends EventEmitter {
    * @returns 连接信息
    */
   private _buildPeerInfo(networkInfo: NetworkInfo | null): PeerConnectionInfo | null {
-    if (!networkInfo) return null
-
-    return {
-      peerId: '',
-      ipv6Address: networkInfo.ipv6.addresses[0],
-      // 不默认设置 ipv6Port，等待房主通过 Signal 提供 IPv6 passive 端口。
-      // 若信号未到达则 ipv6Port 为 undefined，IPv6 直连会因端口无效而快速失败，
-      // 路径选择器将自动降级到下一优先级路径。
-      ipv6Port: undefined,
-      publicAddress: networkInfo.ipv4.publicIp
-        ? { ip: networkInfo.ipv4.publicIp, port: networkInfo.ipv4.publicPort }
-        : undefined
-    }
+    return buildPeerInfo(networkInfo)
   }
 
   /**
@@ -1340,20 +1367,27 @@ export class TunnelManager extends EventEmitter {
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
         this._relayClient.removeListener('signal', onSignal)
-        logger.info('P2P 地址信号等待超时, 按路径顺序继续')
+        logger.info('P2P address signal wait timed out, continuing with path ordering')
         resolve(false)
       }, timeoutMs)
 
       const onSignal = (data: { from: string; signalData: unknown }): void => {
         if (data.from !== hostId) return
         const sig = data.signalData as Record<string, unknown>
-        if (sig?.type === 'p2p-address' && typeof sig.ip === 'string' && typeof sig.port === 'number') {
+        if (sig?.type === 'p2p-address' && typeof sig.port === 'number') {
           clearTimeout(timer)
           this._relayClient.removeListener('signal', onSignal)
           if (this._guestPeerInfo) {
-            this._guestPeerInfo.publicAddress = { ip: sig.ip, port: sig.port }
+            if (sig.ip && typeof sig.ip === 'string') {
+              this._guestPeerInfo.publicAddress = { ip: sig.ip, port: sig.port }
+            }
+            if (Array.isArray(sig.localIps) && sig.localIps.length > 0) {
+              this._guestPeerInfo.localAddresses = sig.localIps.map((ip: string) => ({
+                ip, port: sig.port as number
+              }))
+            }
           }
-          logger.info('已接收房主 P2P 地址信号')
+          logger.info('Host P2P address signal received')
           resolve(true)
         }
       }
@@ -1380,13 +1414,13 @@ export class TunnelManager extends EventEmitter {
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
         this._relayClient.removeListener('signal', onSignal)
-        logger.info('IPv6 地址信号等待超时, 按路径顺序继续')
+        logger.info('IPv6 address signal wait timed out, continuing with path ordering')
         resolve(false)
       }, timeoutMs)
 
       const onSignal = (data: { from: string; signalData: unknown }): void => {
         if (data.from !== hostId) {
-          logger.debug(`[SIGNAL] IPv6 wait 忽略非房主信号: from=${data.from}`)
+          logger.debug(`[Signal] IPv6 wait ignored non-host signal: from ${data.from}`)
           return
         }
         const sig = data.signalData as Record<string, unknown>
@@ -1398,10 +1432,10 @@ export class TunnelManager extends EventEmitter {
             this._guestPeerInfo.ipv6Port = sig.port
           }
           const v6SigInfo = process.env.NODE_ENV !== 'production' ? ` [${sig.address}]:${sig.port}` : ''
-          logger.info(`已接收房主 IPv6 地址信号${v6SigInfo}`)
+          logger.info(`Host IPv6 address signal received${v6SigInfo}`)
           resolve(true)
         } else {
-          logger.debug(`[SIGNAL] IPv6 wait 收到非目标信号: type=${sig?.type}, from=${data.from}`)
+          logger.debug(`[Signal] IPv6 wait received non-target signal: type: ${sig?.type}, from ${data.from}`)
         }
       }
 
@@ -1426,7 +1460,7 @@ export class TunnelManager extends EventEmitter {
     return new Promise<boolean>((resolve) => {
       const timer = setTimeout(() => {
         this._relayClient.removeListener('signal', onSignal)
-        logger.info('KCP 地址信号等待超时, 按路径顺序继续')
+        logger.info('KCP address signal wait timed out, continuing with path ordering')
         resolve(false)
       }, timeoutMs)
 
@@ -1439,7 +1473,7 @@ export class TunnelManager extends EventEmitter {
           if (this._guestPeerInfo) {
             this._guestPeerInfo.kcpAddress = { ip: sig.ip, port: sig.port }
           }
-          logger.info(`已接收房主 KCP 地址信号`)
+          logger.info(`Host KCP address signal received`)
           resolve(true)
         }
       }

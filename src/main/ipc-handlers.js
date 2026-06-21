@@ -12,6 +12,27 @@
 'use strict'
 
 const { ipcMain, app, shell, BrowserWindow } = require('electron')
+const path = require('path')
+
+/** @type {import('../core/tunnel/tunnel-manager').TunnelManager|null} */
+let _tunnelManager = null
+
+/** @type {'light'|'dark'|'auto'} */
+let _currentTheme = 'auto'
+
+/**
+ * 功能描述：清理隧道管理器（应用退出时调用）
+ */
+async function cleanupTunnel() {
+  if (_tunnelManager) {
+    try {
+      await _tunnelManager.leaveRoom()
+    } catch {
+      // 退出清理忽略错误
+    }
+    _tunnelManager = null
+  }
+}
 
 /**
  * 功能描述：注册所有 IPC 通道
@@ -20,7 +41,8 @@ function registerIpcHandlers() {
   // ─── 日志转发（核心引擎 Logger → 渲染进程）────────────
   const { addLogForwarder } = require('../core/utils/logger')
 
-  addLogForwarder((_level, message) => {
+  addLogForwarder((level, message) => {
+    if (level === 'debug') return
     const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
     for (const win of wins) {
       win.webContents.send('log:info', message)
@@ -42,6 +64,109 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
+  ipcMain.handle('app:theme-changed', (_event, theme) => {
+    // 存储主题供托盘菜单同步
+    _currentTheme = theme
+    return { success: true }
+  })
+
+  ipcMain.handle('app:open-log-file', async () => {
+    const { getLogFilePath } = require('../core/utils/logger')
+    const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
+    const err = await shell.openPath(logPath)
+    if (err) {
+      return { success: false, error: err }
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('app:open-log-dir', async () => {
+    const { getLogFilePath } = require('../core/utils/logger')
+    const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
+    shell.showItemInFolder(logPath)
+    return { success: true }
+  })
+
+  ipcMain.handle('app:select-log-directory', async () => {
+    const { dialog } = require('electron')
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: '选择日志文件目录'
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: true, data: null }
+    }
+    return { success: true, data: result.filePaths[0] }
+  })
+
+  ipcMain.handle('app:set-close-behavior', (_event, behavior) => {
+    if (behavior === 'quit' || behavior === 'hide') {
+      global._closeBehavior = behavior
+    }
+  })
+
+  /**
+   * 功能描述：选择/加载背景图片
+   *
+   * 逻辑说明：无参数时打开文件选择对话框（支持 png/jpg/webp/gif），
+   *           选择后读取文件转为 base64 data URL 返回。
+   *           传入已有路径时直接读取该路径。
+   *
+   * @param {string} [existingPath] - 已保存的图片路径（可选）
+   * @returns {Promise<{success: true, data: {path: string, dataUrl: string}}|{success: false}>}
+   */
+  ipcMain.handle('app:background-select', async (_event, existingPath) => {
+    const fs = require('fs')
+    const pathModule = require('path')
+    let filePath = existingPath
+
+    if (!filePath) {
+      const { dialog } = require('electron')
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title: '选择背景图片',
+        filters: [
+          { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'] }
+        ]
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: true, data: null }
+      }
+      filePath = result.filePaths[0]
+    }
+
+    try {
+      const buffer = fs.readFileSync(filePath)
+      const ext = pathModule.extname(filePath).slice(1).toLowerCase()
+      const mimeMap = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', bmp: 'image/bmp', gif: 'image/gif' }
+      const mime = mimeMap[ext] || 'image/png'
+      const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`
+      return { success: true, data: { path: filePath, dataUrl } }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('app:set-log-file-path', (_event, dirPath) => {
+    const { setLogFilePath } = require('../core/utils/logger')
+    if (dirPath) {
+      setLogFilePath(path.join(dirPath, 'app.log'))
+    } else {
+      setLogFilePath(path.join(app.getPath('userData'), 'logs', 'app.log'))
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('app:confirm-disconnect', () => {
+    // 转发给所有渲染进程，由 GlobalErrorWatcher 显示确认对话框
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('app:confirm-disconnect')
+      }
+    })
+    return { success: true }
+  })
+
   // ─── 网络检测 ───────────────────────────────────────
 
   ipcMain.handle('network:detect', async () => {
@@ -56,9 +181,6 @@ function registerIpcHandlers() {
   })
 
   // ─── 房间 ───────────────────────────────────────────
-
-  /** @type {import('../core/tunnel/tunnel-manager').TunnelManager|null} */
-  let _tunnelManager = null
 
   /**
    * 功能描述：获取或创建 TunnelManager 单例
@@ -77,6 +199,12 @@ function registerIpcHandlers() {
       _tunnelManager.on('traffic', (stats) => {
         BrowserWindow.getAllWindows().forEach((win) => {
           win.webContents.send('tunnel:traffic', stats)
+        })
+      })
+
+      _tunnelManager.on('latency', (rtt) => {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('tunnel:latency', rtt)
         })
       })
 
@@ -125,13 +253,15 @@ function registerIpcHandlers() {
     }
   })
 
-  ipcMain.handle('room:join', async (_event, { roomCode, memberName }) => {
+  ipcMain.handle('room:join', async (_event, { roomCode, memberName, relayUrl, localPort }) => {
+    const manager = _getTunnelManager()
     try {
-      const manager = _getTunnelManager()
-      await manager.joinRoom(roomCode)
+      await manager.joinRoom(roomCode, relayUrl || undefined, localPort || 0)
       const status = await manager.getStatus()
       return { success: true, data: { status: 'connected', localPort: status.localPort } }
     } catch (err) {
+      // joinRoom 失败时清理已建立的中继连接
+      try { await manager.leaveRoom() } catch { /* ignore */ }
       return { success: false, error: err.message }
     }
   })
@@ -161,6 +291,18 @@ function registerIpcHandlers() {
 
   // ─── 隧道 ───────────────────────────────────────────
 
+  ipcMain.handle('tunnel:status', async () => {
+    try {
+      if (_tunnelManager) {
+        const status = await _tunnelManager.getStatus()
+        return { success: true, data: status }
+      }
+      return { success: true, data: null }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
   ipcMain.handle('tunnel:start', async (_event, options) => {
     try {
       const manager = _getTunnelManager()
@@ -187,13 +329,44 @@ function registerIpcHandlers() {
 
   // ─── 更新 ───────────────────────────────────────────
 
-  ipcMain.handle('update:check', async () => {
+  ipcMain.handle('update:check', async (_event, options) => {
     try {
       const { checkForUpdates } = require('./updater')
-      const result = await checkForUpdates()
+      const result = await checkForUpdates(options?.currentVersion)
       return { success: true, data: result }
     } catch (err) {
       return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('update:download', async (_event, downloadUrl, version) => {
+    try {
+      const { downloadUpdate, getUpdateDestPath, markDownloadComplete } = require('./updater')
+      const destPath = getUpdateDestPath()
+
+      const filePath = await downloadUpdate(downloadUrl, destPath, (percent) => {
+        const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+        for (const win of wins) {
+          win.webContents.send('update:download-progress', percent)
+        }
+      })
+
+      markDownloadComplete(version)
+
+      return { success: true, data: { filePath } }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  ipcMain.handle('update:install', async (_event, filePath) => {
+    try {
+      const { installUpdate } = require('./updater')
+      await installUpdate(filePath)
+      return { success: true }
+    } catch (err) {
+      console.error(`[ipc] 安装失败: ${err instanceof Error ? err.message : String(err)}`)
+      return { success: false, error: String(err) }
     }
   })
 
@@ -222,6 +395,20 @@ function registerIpcHandlers() {
     const formatted = _formatLog('ERROR', message)
     console.error(formatted)
     _broadcastLog(formatted)
+    return { success: true }
+  })
+
+  // ─── 窗口控制 ───────────────────────────────────────
+
+  ipcMain.handle('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.minimize()
+    return { success: true }
+  })
+
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.close()
     return { success: true }
   })
 
@@ -271,6 +458,25 @@ function registerIpcHandlers() {
       return { success: false, error: err.message }
     }
   })
+
+  ipcMain.handle('game:check-port', async (_event, port) => {
+    try {
+      const { portChecker } = require('../core/game-detect/port-checker')
+      const result = await portChecker.checkTcpPort(port, 1000)
+      return { success: true, data: result }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
 }
 
-module.exports = { registerIpcHandlers }
+/**
+ * 功能描述：获取当前主题设置
+ *
+ * @returns {'light'|'dark'|'auto'}
+ */
+function getCurrentTheme() {
+  return _currentTheme
+}
+
+module.exports = { registerIpcHandlers, cleanupTunnel, getCurrentTheme }

@@ -1,24 +1,17 @@
 /**
- * 功能描述：NAT 类型检测 — 基于 STUN (RFC 3489/5389) 检测 NAT 类型
+ * 功能描述：NAT 类型检测 — 基于 STUN (RFC 5389) 检测 NAT 映射行为
  *
- * 逻辑说明：两阶段检测 + 映射稳定性验证，全程使用同一 UDP socket 确保 NAT 映射一致：
+ * 逻辑说明：单阶段多服务器映射行为检测，参照 FRP classify.go 的 EasyNAT/HardNAT 分类：
  *
- *           Phase 1（多服务器映射行为检测）：
- *             同一个 socket 向多个 STUN 服务器发送 Binding Request，
- *             收集至少 2 个独立响应后比对映射端口差异。
- *             映射端口一致 → Endpoint-Independent Mapping
- *             映射端口不同 → Address-Dependent Mapping（即 Symmetric NAT）
+ *           同一个 UDP socket 向多个 STUN 服务器发送 Binding Request，
+ *           收集响应后比对映射端口。同时从响应中提取 OTHER-ADDRESS 属性，
+ *           向该额外目标再次查询以获得更多映射数据点。
  *
- *           Phase 2（CHANGE-REQUEST 过滤行为检测）：
- *             Phase 1 确认是 Cone NAT 后，至多尝试 2 台延迟最低的服务器。
- *             使用 RFC 3489 CHANGE-REQUEST 属性区分过滤行为：
- *               - 换 IP+端口能收到 → Endpoint-Independent Filtering（Full Cone）
- *               - 仅换端口能收到   → Address-Dependent Filtering（Restricted Cone）
- *               - 均无响应         → Port Restricted Cone
+ *           映射端口全部一致 → EasyNAT（Endpoint-Independent Mapping）
+ *           存在任何差异     → HardNAT（Address-Dependent Mapping）
  *
- *           稳定性验证：
- *             Phase 1 完成后重新查询最快服务器，确认映射地址不变。
- *             若映射发生变化，说明 NAT 端口分配不稳定，保守判定为 Symmetric。
+ *           稳定性验证：重新查询最快服务器，确认映射地址不变。
+ *           若发生变化 → 保守判定为 HardNAT。
  *
  * @module nat-type
  */
@@ -37,20 +30,19 @@ const STUN_MAGIC_COOKIE = 0x2112a442
 // STUN 属性类型
 const STUN_ATTR_MAPPED_ADDRESS = 0x0001
 const STUN_ATTR_XOR_MAPPED_ADDRESS = 0x0020
-const STUN_ATTR_CHANGE_REQUEST = 0x0003
-
-/** CHANGE-REQUEST 标志 */
-const CHANGE_REQUEST_CHANGE_IP = 0x00000004
-const CHANGE_REQUEST_CHANGE_PORT = 0x00000002
 
 // ─── 默认 STUN 服务器 ─────────────────────────────────
 const DEFAULT_STUN_SERVERS: string[] = [
-  'stun.l.google.com:19302',
-  'stun1.l.google.com:19302',
-  'stun2.l.google.com:19302',
-  'stun.stunprotocol.org:3478',
-  'stun.iptel.org:3478'
+  'stun.miwifi.com:3478',
+  'stun.chat.bilibili.com:3478',
+  'stun.cloudflare.com:3478',
+  'stun.l.google.com:19302'
 ]
+
+/** OTHER-ADDRESS (RFC 5389) / CHANGED-ADDRESS (RFC 3489) */
+const STUN_ATTR_CHANGED_ADDRESS = 0x0005
+const STUN_ATTR_OTHER_ADDRESS = 0x8023
+const STUN_ATTR_OTHER_ADDRESS_2 = 0x802B
 
 /** STUN 服务器响应 */
 interface StunResponse {
@@ -58,43 +50,23 @@ interface StunResponse {
   mappedPort: number
   serverAddress: string
   latencyMs: number
+  raw: Buffer
 }
 
 /**
  * 功能描述：生成 STUN Binding Request 消息
  *
  * 逻辑说明：根据 RFC 5389 生成 STUN 消息格式。
- *           当 changeRequest 非 0 时，追加 CHANGE-REQUEST 属性，
- *           请求服务器从不同 IP 和/或端口回包（RFC 3489）。
  *
- * @param changeRequest - CHANGE-REQUEST 标志（0x04=换IP, 0x02=换端口, 0x06=都换），0=普通请求
  * @returns 消息 buffer 和事务 ID
  */
-function createStunRequest(changeRequest: number = 0): { buffer: Buffer; transactionId: Buffer } {
+function createStunRequest(): { buffer: Buffer; transactionId: Buffer } {
   const transactionId = crypto.randomBytes(12)
-
-  // CHANGE-REQUEST 属性为 8 字节（4 字节属性头 + 4 字节值）
-  const attrLen = changeRequest !== 0 ? 8 : 0
-  const buffer = Buffer.alloc(20 + attrLen)
-
-  // 消息类型 (2 字节): Binding Request
+  const buffer = Buffer.alloc(20)
   buffer.writeUInt16BE(STUN_BINDING_REQUEST, 0)
-
-  // 消息长度 (2 字节)
-  buffer.writeUInt16BE(attrLen, 2)
-
-  // Magic Cookie (4 字节)
+  buffer.writeUInt16BE(0, 2)
   buffer.writeUInt32BE(STUN_MAGIC_COOKIE, 4)
-
-  // Transaction ID (12 字节)
   transactionId.copy(buffer, 8)
-
-  if (changeRequest !== 0) {
-    buffer.writeUInt16BE(STUN_ATTR_CHANGE_REQUEST, 20)  // type
-    buffer.writeUInt16BE(4, 22)                          // length
-    buffer.writeUInt32BE(changeRequest, 24)              // value
-  }
-
   return { buffer, transactionId }
 }
 
@@ -118,7 +90,6 @@ function parseStunResponse(
   const cookie = response.readUInt32BE(4)
   const receivedTid = response.subarray(8, 20)
 
-  // 验证 Magic Cookie 和 Transaction ID
   if (cookie !== STUN_MAGIC_COOKIE) return null
   if (!receivedTid.equals(transactionId)) return null
   if (messageType !== STUN_SUCCESS_RESPONSE) return null
@@ -133,12 +104,10 @@ function parseStunResponse(
     const attrValue = response.subarray(offset + 4, offset + 4 + attrLength)
 
     if (attrType === STUN_ATTR_XOR_MAPPED_ADDRESS && attrLength >= 8) {
-      // XOR-MAPPED-ADDRESS: 1 byte padding + 1 byte family + 2 bytes port + 16/4 bytes address
       const family = attrValue.readUInt8(1)
       const xorPort = attrValue.readUInt16BE(2) ^ (STUN_MAGIC_COOKIE >> 16)
 
       if (family === 0x01) {
-        // IPv4: 4 字节地址
         const xorAddr = attrValue.readUInt32BE(4) ^ STUN_MAGIC_COOKIE
         const address = [
           (xorAddr >>> 24) & 0xff,
@@ -148,12 +117,10 @@ function parseStunResponse(
         ].join('.')
         return { address, port: xorPort }
       }
-      // IPv6 简化处理
       return { address: '::1', port: xorPort }
     }
 
     if (attrType === STUN_ATTR_MAPPED_ADDRESS && attrLength >= 8) {
-      // MAPPED-ADDRESS: 1 byte padding + 1 byte family + 2 bytes port + 4/16 bytes address
       const family = attrValue.readUInt8(1)
       const port = attrValue.readUInt16BE(2)
 
@@ -166,7 +133,6 @@ function parseStunResponse(
     }
 
     offset += 4 + attrLength
-    // 对齐到 4 字节
     if (attrLength % 4 !== 0) {
       offset += 4 - (attrLength % 4)
     }
@@ -176,108 +142,65 @@ function parseStunResponse(
 }
 
 /**
- * 功能描述：创建 UDP socket 并绑定到随机端口
+ * 功能描述：从 STUN 响应中提取 OTHER-ADDRESS / CHANGED-ADDRESS
  *
- * @param timeoutMs - 超时时间
- * @returns socket，失败返回 null
+ * 逻辑说明：OTHER-ADDRESS（RFC 5389, type 0x8023）和
+ *           CHANGED-ADDRESS（RFC 3489, type 0x0005）表示 STUN 服务器的
+ *           另一个 IP:PORT。向该地址发送 Binding Request 可获取另一个
+ *           映射数据点，用于判断 NAT 映射行为是否为地址相关。
+ *
+ * @param response - STUN 响应原始数据
+ * @returns 地址和端口，未找到返回 null
  */
-async function createUdpSocket(timeoutMs: number = 2000): Promise<dgram.Socket | null> {
-  return new Promise((resolve) => {
-    const socket = dgram.createSocket('udp4')
-    const timer = setTimeout(() => {
-      socket.close()
-      resolve(null)
-    }, timeoutMs)
-    socket.once('listening', () => {
-      clearTimeout(timer)
-      resolve(socket)
-    })
-    socket.once('error', () => {
-      clearTimeout(timer)
-      socket.close()
-      resolve(null)
-    })
-    socket.bind()
-  })
+function extractChangedAddress(response: Buffer): { address: string; port: number } | null {
+  if (response.length < 20) return null
+  const length = response.readUInt16BE(2)
+  let offset = 20
+  const end = offset + length
+
+  while (offset + 4 <= end) {
+    const attrType = response.readUInt16BE(offset)
+    const attrLength = response.readUInt16BE(offset + 2)
+    const attrValue = response.subarray(offset + 4, offset + 4 + attrLength)
+
+    if ((attrType === STUN_ATTR_CHANGED_ADDRESS || attrType === STUN_ATTR_OTHER_ADDRESS || attrType === STUN_ATTR_OTHER_ADDRESS_2) && attrLength >= 8) {
+      const family = attrValue.readUInt8(1)
+      const port = attrValue.readUInt16BE(2)
+      if (family === 0x01) {
+        const address = Array.from(attrValue.subarray(4, 8))
+          .map(b => b.toString()).join('.')
+        return { address, port }
+      }
+    }
+
+    offset += 4 + attrLength
+    if (attrLength % 4 !== 0) offset += 4 - (attrLength % 4)
+  }
+  return null
 }
 
 /**
- * 功能描述：发送 CHANGE-REQUEST 探测
+ * 功能描述：向 OTHER-ADDRESS 发送 STUN 请求
  *
- * 逻辑说明：通过已有 socket 发送带 CHANGE-REQUEST 属性的 STUN 请求，
- *           等待服务器从不同 IP/端口回包。超时无响应时自动重试一次。
+ * 逻辑说明：复用已有 socket，向提取的 second 目标发送 Binding Request，
+ *           获取该目标下的 NAT 映射地址，用于与主服务器对比。
  *
  * @param socket - 已绑定的 UDP socket
- * @param serverAddr - 服务器地址（host:port）
- * @param changeRequest - CHANGE-REQUEST 标志
- * @param timeoutMs - 每次尝试的超时时间
- * @returns 是否收到有效响应
+ * @param target - 目标地址和端口
+ * @param timeoutMs - 超时时间
+ * @returns 响应信息，失败返回 null
  */
-async function sendChangeRequest(
+async function queryOtherAddress(
   socket: dgram.Socket,
-  serverAddr: string,
-  changeRequest: number,
-  timeoutMs: number = 2000
-): Promise<boolean> {
-  const [host, portStr] = serverAddr.split(':')
-  const port = parseInt(portStr, 10)
-  if (!host || isNaN(port)) return false
-
+  target: { address: string; port: number },
+  timeoutMs: number = 3000
+): Promise<StunResponse | null> {
+  const serverAddr = `${target.address}:${target.port}`
   for (let attempt = 0; attempt < 2; attempt++) {
-    const ok = await _sendChangeRequestOnce(socket, host, port, changeRequest, timeoutMs)
-    if (ok) return true
+    const result = await _queryOnce(socket, target.address, target.port, serverAddr, timeoutMs)
+    if (result) return result
   }
-  return false
-}
-
-async function _sendChangeRequestOnce(
-  socket: dgram.Socket,
-  host: string,
-  port: number,
-  changeRequest: number,
-  timeoutMs: number
-): Promise<boolean> {
-  const { buffer, transactionId } = createStunRequest(changeRequest)
-
-  return new Promise((resolve) => {
-    let settled = false
-
-    const onMessage = (msg: Buffer) => {
-      const result = parseStunResponse(msg, transactionId)
-      if (result !== null) {
-        cleanup()
-        resolve(true)
-      }
-    }
-
-    const onError = () => {
-      cleanup()
-      resolve(false)
-    }
-
-    function cleanup() {
-      settled = true
-      socket.off('message', onMessage)
-      socket.off('error', onError)
-    }
-
-    socket.on('message', onMessage)
-    socket.on('error', onError)
-
-    socket.send(buffer, 0, buffer.length, port, host, (err) => {
-      if (err) {
-        cleanup()
-        resolve(false)
-      }
-    })
-
-    setTimeout(() => {
-      if (!settled) {
-        cleanup()
-        resolve(false)
-      }
-    }, timeoutMs)
-  })
+  return null
 }
 
 /**
@@ -300,7 +223,6 @@ async function queryOnSocket(
   const port = parseInt(portStr, 10)
   if (!host || isNaN(port)) return null
 
-  // 最多尝试 2 次，防 UDP 丢包
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await _queryOnce(socket, host, port, serverAddr, timeoutMs)
     if (result) return result
@@ -331,7 +253,8 @@ async function _queryOnce(
           mappedAddress: result.address,
           mappedPort: result.port,
           serverAddress: serverAddr,
-          latencyMs: Date.now() - start
+          latencyMs: Date.now() - start,
+          raw: msg
         })
       }
     }
@@ -357,30 +280,43 @@ async function _queryOnce(
 }
 
 /**
+ * 功能描述：创建 UDP socket 并绑定到随机端口
+ *
+ * @param timeoutMs - 超时时间
+ * @returns socket，失败返回 null
+ */
+async function createUdpSocket(timeoutMs: number = 2000): Promise<dgram.Socket | null> {
+  return new Promise((resolve) => {
+    const socket = dgram.createSocket('udp4')
+    const timer = setTimeout(() => {
+      socket.close()
+      resolve(null)
+    }, timeoutMs)
+    socket.once('listening', () => {
+      clearTimeout(timer)
+      resolve(socket)
+    })
+    socket.once('error', () => {
+      clearTimeout(timer)
+      socket.close()
+      resolve(null)
+    })
+    socket.bind()
+  })
+}
+
+/**
  * 功能描述：检测 NAT 类型
  *
- * 逻辑说明：两阶段检测 + 映射稳定性验证，全程使用同一 UDP socket 确保 NAT 映射一致：
+ * 逻辑说明：单阶段多服务器映射检测，参照 FRP 的 EasyNAT/HardNAT 分类：
  *
- *           Phase 1（多服务器映射行为检测）：
- *             同一个 socket 向多个 STUN 服务器发送 Binding Request，
- *             收集到 3 个响应即提前退出（足够判断映射行为）。
- *             不足 2 个时尽力尝试剩余服务器凑足第二个数据点。
- *             映射端口一致 → Endpoint-Independent Mapping
- *             映射端口不同 → Address-Dependent Mapping（即 Symmetric NAT）
+ *           1. 同一个 socket 向多个 STUN 服务器并发发送 Binding Request
+ *           2. 从响应中提取 OTHER-ADDRESS 作为额外目标查询
+ *           3. 收集所有映射地址，全部端口一致 → EasyNAT，存在差异 → HardNAT
+ *           4. 稳定性验证：重新查询最快服务器确认映射未变化
  *
- *           稳定性验证：
- *             重新查询最快服务器，确认映射地址/端口未发生变化。
- *             若变化 → 保守判定为 Symmetric NAT。
- *
- *           Phase 2（CHANGE-REQUEST 过滤行为检测）：
- *             至多尝试 2 台延迟最低的服务器（避免长时间等待不支持 RFC 3489 的服务器）。
- *             使用 CHANGE-REQUEST 属性区分三种过滤行为：
- *               - 换 IP+端口能收到 → Endpoint-Independent Filtering（Full Cone）
- *               - 仅换端口能收到   → Address-Dependent Filtering（Restricted Cone）
- *               - 均无响应         → Port Restricted Cone（最保守默认）
- *
- * @param stunServers - STUN 服务器列表，默认 5 台
- * @param timeoutMs - 每个请求超时，实际以 2500ms 封顶
+ * @param stunServers - STUN 服务器列表
+ * @param timeoutMs - 每个请求超时
  * @returns NAT 检测结果
  */
 export async function detectNatType(
@@ -389,7 +325,6 @@ export async function detectNatType(
 ): Promise<NatCheckResult> {
   const localAddresses = getLocalIpv4Addresses()
 
-  // 创建单例 socket（整个检测周期复用同一本地端口）
   const socket = await createUdpSocket(2000)
   if (!socket) {
     return {
@@ -410,28 +345,28 @@ export async function detectNatType(
   })
 
   try {
-    // ── Phase 1: STUN Binding Request — 对称性 + 映射行为检测 ──
-    // 同一 socket 顺序发往所有服务器，避免响应交叉混淆。
-    // 收集到 3 个响应即足够判断映射行为，后续无需继续等待。
-    // 若不足 2 个，则继续尝试所有剩余服务器，尽力获取第二个数据点。
-    const QUERY_TIMEOUT = Math.min(timeoutMs, 2500)
+    // ── 多服务器 STUN 并行查询 ──
+    const QUERY_TIMEOUT = Math.min(timeoutMs, 1500)
     const responses: StunResponse[] = []
+    const otherAddrResponses: StunResponse[] = []
 
-    for (const server of stunServers) {
-      const resp = await queryOnSocket(socket, server, QUERY_TIMEOUT)
-      if (resp) {
-        responses.push(resp)
-        if (responses.length >= 3) break
+    const settled = await Promise.allSettled(
+      stunServers.map(server => queryOnSocket(socket, server, QUERY_TIMEOUT))
+    )
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value !== null) {
+        responses.push(r.value)
       }
     }
 
-    // 不足 2 个响应时继续尝试剩余服务器（尽力获取第二个映射数据点）
-    if (responses.length < 2) {
-      for (const server of stunServers) {
-        if (responses.some(r => r.serverAddress === server)) continue
-        const resp = await queryOnSocket(socket, server, QUERY_TIMEOUT)
-        if (resp) responses.push(resp)
-        if (responses.length >= 2) break
+    if (responses.length === 0) return _unknownResult()
+
+    // 从任一响应中提取 OTHER-ADDRESS 作为第二个目标
+    for (const resp of responses) {
+      const other = extractChangedAddress(resp.raw)
+      if (other) {
+        const cr = await queryOtherAddress(socket, other, QUERY_TIMEOUT)
+        if (cr) { otherAddrResponses.push(cr); break }
       }
     }
 
@@ -443,7 +378,7 @@ export async function detectNatType(
     )
     const { mappedAddress, mappedPort } = best
 
-    // 检查是否无 NAT
+    // 检查是否无 NAT（公网 IP）
     if (localAddresses.includes(mappedAddress)) {
       return {
         natType: 'none',
@@ -456,83 +391,48 @@ export async function detectNatType(
     }
 
     // ── 映射稳定性验证 ──
-    // 重新请求最佳服务器，确认映射地址/端口未变化。
-    // 若发生变化（NAT 映射超时过短或路由器行为异常），保守判为 Symmetric。
     const verifyResult = await queryOnSocket(socket, best.serverAddress, 2000)
     if (verifyResult) {
       const mappingStable = verifyResult.mappedAddress === mappedAddress
         && verifyResult.mappedPort === mappedPort
       if (!mappingStable) {
+        // 映射发生变化 → 保守判定为 HardNAT
         return {
-          natType: 'symmetric',
+          natType: 'hard-nat',
           mappingBehavior: 'address-and-port-dependent',
-          filteringBehavior: 'address-and-port-dependent',
+          filteringBehavior: 'unknown',
           publicIp: mappedAddress, publicPort: mappedPort, localAddresses
         }
       }
     }
 
-    // 判断 Mapping Behavior：同一端口 → Endpoint-Independent；不同 → Address-Dependent
+    // ── EasyNAT / HardNAT 判定 ──
+    // 收集所有映射数据点，对比映射地址和端口
+    const allMappings = [...responses, ...otherAddrResponses]
     let mappingBehavior: MappingBehavior = 'unknown'
-    if (responses.length >= 2) {
+    let natType: NatType = 'easy-nat'
+
+    if (allMappings.length >= 2) {
       const uniqueMappings = new Set(
-        responses.map((r) => `${r.mappedAddress}:${r.mappedPort}`)
+        allMappings.map(r => `${r.mappedAddress}:${r.mappedPort}`)
       )
-      mappingBehavior = uniqueMappings.size > 1
-        ? 'address-dependent'
-        : 'endpoint-independent'
+      if (uniqueMappings.size > 1) {
+        natType = 'hard-nat'
+        mappingBehavior = 'address-dependent'
+      } else {
+        mappingBehavior = 'endpoint-independent'
+      }
     }
 
-    // 单服务器响应场景：通过稳定性验证后标记为 endpoint-independent（最佳推测）
+    // 单服务器响应场景：最佳推测为 endpoint-independent
     if (responses.length < 2 && mappingBehavior === 'unknown') {
       mappingBehavior = 'endpoint-independent'
-    }
-
-    // Symmetric NAT = Address-Dependent Mapping
-    if (mappingBehavior === 'address-dependent') {
-      return {
-        natType: 'symmetric',
-        mappingBehavior,
-        filteringBehavior: 'address-and-port-dependent',
-        publicIp: mappedAddress, publicPort: mappedPort, localAddresses
-      }
-    }
-
-    // ── Phase 2: CHANGE-REQUEST — 过滤行为检测 ──
-    // 双服务器限：按延迟排序，至多尝试 2 台最快的服务器。
-    // 某台不支持 CHANGE-REQUEST 时自动 fallback 到下一台。
-    // 均不支持则默认 Port Restricted Cone（最保守的锥型类型）。
-    const sortedServers = [...responses].sort((a, b) => a.latencyMs - b.latencyMs)
-    const CHANGE_REQUEST_SERVER_LIMIT = 2
-
-    let filteringBehavior: FilteringBehavior = 'unknown'
-    let natType: NatType = 'port-restricted-cone'
-
-    for (let i = 0; i < Math.min(sortedServers.length, CHANGE_REQUEST_SERVER_LIMIT); i++) {
-      const { serverAddress } = sortedServers[i]
-      if (await sendChangeRequest(socket, serverAddress,
-        CHANGE_REQUEST_CHANGE_IP | CHANGE_REQUEST_CHANGE_PORT, 1500)) {
-        filteringBehavior = 'endpoint-independent'
-        natType = 'full-cone'
-        break
-      }
-      if (await sendChangeRequest(socket, serverAddress,
-        CHANGE_REQUEST_CHANGE_PORT, 1500)) {
-        filteringBehavior = 'address-dependent'
-        natType = 'restricted-cone'
-        break
-      }
-    }
-
-    // 所有支持的服务器均不支持 CHANGE-REQUEST → Port Restricted Cone
-    if (filteringBehavior === 'unknown') {
-      filteringBehavior = 'address-and-port-dependent'
     }
 
     return {
       natType,
       mappingBehavior,
-      filteringBehavior,
+      filteringBehavior: 'unknown',
       publicIp: mappedAddress, publicPort: mappedPort, localAddresses
     }
   } finally {

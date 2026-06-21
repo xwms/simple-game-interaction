@@ -11,7 +11,7 @@
 
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
-const { createWindow } = require('./window-manager')
+const { createWindow, showMainWindow } = require('./window-manager')
 const { registerIpcHandlers } = require('./ipc-handlers')
 const { createTray } = require('./tray')
 const { createMenu } = require('./menu')
@@ -28,13 +28,18 @@ if (isDev) {
 /**
  * 功能描述：应用启动入口
  *
- * 逻辑说明：按顺序执行：创建菜单 → 注册 IPC → 创建窗口 → 创建托盘。
+ * 逻辑说明：按顺序执行：配置日志文件 → 创建菜单 → 注册 IPC → 创建窗口 → 创建托盘。
  *           macOS 下 app.dock 在创建窗口前显示。
  */
 function bootstrap() {
+  // 配置日志文件路径
+  const { setLogFilePath } = require('../core/utils/logger')
+  setLogFilePath(path.join(app.getPath('userData'), 'logs', 'app.log'))
+
   createMenu()
   registerIpcHandlers()
   createWindow()
+  createTray(showMainWindow)
 
   if (isDev) {
     const { initUpdater } = require('./updater')
@@ -61,10 +66,17 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  global._isQuitting = true
   // 清理系统托盘
   const { getTray } = require('./tray')
   const tray = getTray()
   if (tray) {
     tray.destroy()
   }
+})
+
+// 退出前自动离开房间，通知中继服务器清理状态
+app.on('will-quit', () => {
+  const { cleanupTunnel } = require('./ipc-handlers')
+  cleanupTunnel().catch(() => {})
 })

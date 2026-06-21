@@ -59,6 +59,27 @@ export class LocalTunnelClient extends EventEmitter {
   }
 
   /**
+   * 功能描述：立即关闭当前游戏服务器连接
+   *
+   * 逻辑说明：由 relay close-game-conn 信令触发。
+   *           与 forceReconnect 不同，不等待数据到达，立即销毁 socket。
+   *           不设置 _disconnecting，下次数据到达时惰性重连会正常工作。
+   */
+  closeConnection(): void {
+    if (this._disconnecting) return
+    this._connectPromise = null
+    this._pendingBuffer = []
+    if (this._socket) {
+      this._socket.destroy()
+      this._socket = null
+    }
+    this._gen++
+    this._setStatus('disconnected')
+    logger.debug('Game server connection closed (close-game-conn signal)')
+    this.emit('disconnected')
+  }
+
+  /**
    * 功能描述：连接到本机游戏服务器
    *
    * 逻辑说明：创建 net.Socket 连接到 127.0.0.1:port。
@@ -96,7 +117,7 @@ export class LocalTunnelClient extends EventEmitter {
       this._socket = null
     }
     this._setStatus('disconnected')
-    logger.info('本地客户端已断开')
+    logger.debug('Local client disconnected')
     this.emit('disconnected')
   }
 
@@ -123,9 +144,10 @@ export class LocalTunnelClient extends EventEmitter {
     transport.on(TRANSPORT_EVENTS.DATA, (data: unknown) => {
       const buf = data as Buffer
       if (this._socket && !this._socket.destroyed) {
+        logger.debug(`LocalClient remote data → writing to game socket ${buf.length}B (status=${this._status})`)
         this._socket.write(buf)
       } else if (!this._disconnecting) {
-        // 惰性重连：数据到达时 socket 未就绪，缓冲并触发连接
+        logger.debug(`LocalClient remote data → buffering ${buf.length}B (socket=${!!this._socket}), triggering lazy reconnect`)
         this._pendingBuffer.push(buf)
         this._triggerLazyConnect()
       }
@@ -136,17 +158,17 @@ export class LocalTunnelClient extends EventEmitter {
     })
 
     transport.on(TRANSPORT_EVENTS.ERROR, (err: unknown) => {
-      logger.error('Transport 错误', (err as Error).message)
+      logger.error(`Transport error: ${(err as Error).message}`)
       this.emit('error', err as Error)
     })
 
     transport.on(TRANSPORT_EVENTS.CLOSE, () => {
-      logger.info('Transport 已关闭')
+      logger.info('Transport closed')
     })
 
     // 重置帧：通知重新建立游戏连接（适配 MC 多连接单协议模式）
     transport.on(TRANSPORT_EVENTS.RESET, () => {
-      logger.info('收到重置信号, 重新连接游戏服务器')
+      logger.debug('Received reset signal, reconnecting to game server')
       this._handleReset()
     })
   }
@@ -175,23 +197,27 @@ export class LocalTunnelClient extends EventEmitter {
         this._socket = socket
         this._flushBuffer()
         this._setStatus('connected')
-        logger.info(`已连接游戏服务器 ${this._host}:${this._port}`)
+        logger.debug(`Connected to game server ${this._host}:${this._port}`)
         this.emit('connected', { port: this._port, host: this._host })
         resolve()
       })
 
       socket.on('data', (data: Buffer) => {
+        const transportType = this._transport ? (this._transport as { type?: string }).type || 'unknown' : 'null'
+        logger.debug(`Game server → local [${transportType}]: ${data.length}B`)
         if (this._transport) {
           this._transport.send(data).catch((err: Error) => {
-            logger.error('Transport 发送失败', err.message)
+            logger.error(`Transport send failed: ${err.message} (${data.length}B)`)
           })
+        } else {
+          logger.warn(`Game server data arrived but no transport, dropping ${data.length}B`)
         }
       })
 
       socket.on('close', () => {
         this._socket = null
         this._setStatus('disconnected')
-        logger.info('游戏服务器连接已断开, 等待惰性重连')
+        logger.debug('Game server connection closed, awaiting lazy reconnect')
         this.emit('disconnected')
         // 不主动重连，transport data 到达时 _lazyConnect 会触发
       })
@@ -204,7 +230,7 @@ export class LocalTunnelClient extends EventEmitter {
 
       socket.setTimeout(10000, () => {
         socket.destroy()
-        reject(new Error(`连接游戏服务器超时 ${this._host}:${this._port}`))
+        reject(new Error(`Connection to game server timed out ${this._host}:${this._port}`))
       })
     })
   }
@@ -221,7 +247,7 @@ export class LocalTunnelClient extends EventEmitter {
     }
 
     this._connectPromise = this._doConnect().catch((err: Error) => {
-      logger.warn(`惰性重连失败: ${err.message}, 等待下次数据到达时重试`)
+      logger.warn(`Lazy reconnect failed: ${err.message}, will retry on next data arrival`)
     }).finally(() => {
       this._connectPromise = null
     })
@@ -236,6 +262,7 @@ export class LocalTunnelClient extends EventEmitter {
   private _handleReset(): void {
     if (this._disconnecting) return
 
+    logger.debug(`LocalClient handling reset signal, socket=${!!this._socket}`)
     // 销毁旧 socket
     if (this._socket) {
       this._socket.destroy()
@@ -257,7 +284,7 @@ export class LocalTunnelClient extends EventEmitter {
     if (this._pendingBuffer.length === 0) return
     if (!this._socket || this._socket.destroyed) return
 
-    logger.info(`正在刷新重连缓冲区 (${this._pendingBuffer.length}个数据包)`)
+    logger.debug(`Flushing reconnect buffer (${this._pendingBuffer.length} packets)`)
     for (const buf of this._pendingBuffer) {
       this._socket.write(buf)
     }

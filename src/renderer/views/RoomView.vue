@@ -102,6 +102,15 @@ function copyRoomCode(): void {
 }
 
 /**
+ * 功能描述：复制本地地址到剪贴板
+ */
+function copyAddress(): void {
+  const addr = `127.0.0.1:${gamePort.value}`
+  navigator.clipboard.writeText(addr)
+  message.success(t('room.copied'))
+}
+
+/**
  * 功能描述：格式化字节数为可读字符串
  *
  * @param bytes - 字节数
@@ -375,7 +384,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 游戏连接状态 -->
-      <div v-if="tunnelStore.status === 'connected'">
+      <div v-if="tunnelStore.status === 'connected'" class="flex items-center gap-2 flex-wrap">
         <div v-if="gameStatus === 'connected'" class="flex items-center gap-2 text-xs text-green-500">
           <span class="w-2 h-2 rounded-full bg-green-500" />
           {{ t('room.gameConnected', { port: gamePort }) }}
@@ -388,6 +397,14 @@ onUnmounted(() => {
           <span class="w-2 h-2 rounded-full bg-yellow-400" />
           {{ t('room.waitingGame', { host: '127.0.0.1', port: gamePort }) }}
         </div>
+        <button
+          v-if="!roomStore.isHost"
+          class="h-6 px-2 flex items-center gap-1 rounded text-xs text-primary border border-primary/30 hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors"
+          @click="copyAddress"
+        >
+          <span class="iconfont icon-fuzhi" />
+          <span>{{ t('room.copy') }}</span>
+        </button>
       </div>
     </div>
 

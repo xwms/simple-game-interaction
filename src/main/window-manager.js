@@ -21,7 +21,7 @@ let mainWindow = null
 /**
  * 功能描述：创建主窗口
  *
- * 逻辑说明：设置窗口大小、最小尺寸、preload 脚本路径。
+ * 逻辑说明：设置窗口大小、最小尺寸、frame: false 自定义标题栏、preload 脚本路径。
  *           开发环境加载 http://localhost:5173，生产加载 dist/renderer/index.html。
  */
 /**
@@ -37,7 +37,7 @@ function setCsp() {
         "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
-        "connect-src 'self' ws://localhost:* http://localhost:*",
+        "connect-src 'self' ws://localhost:* http://localhost:* ws://159.75.150.37:* ws://159.75.150.37:*",
         "font-src 'self' data:"
       ]
     : [
@@ -45,7 +45,7 @@ function setCsp() {
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data:",
-        "connect-src 'self'",
+        "connect-src 'self' ws://159.75.150.37:* ws://159.75.150.37:*",
         "font-src 'self' data:"
       ]
 
@@ -65,11 +65,13 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     width: 900,
-    height: 680,
+    height: 600,
     minWidth: 720,
     minHeight: 500,
     title: 'SGI',
     show: false,
+    frame: false,
+    roundedCorners: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -95,13 +97,14 @@ function createWindow() {
     mainWindow = null
   })
 
-  // 最小化时隐藏到托盘（非 macOS）
-  if (process.platform !== 'darwin') {
-    mainWindow.on('minimize', (event) => {
-      event.preventDefault()
-      mainWindow.hide()
-    })
-  }
+  // 根据设置决定关闭行为：退出或隐藏到托盘
+  mainWindow.on('close', (event) => {
+    if (global._isQuitting || global._closeBehavior === 'quit') {
+      return
+    }
+    event.preventDefault()
+    mainWindow.hide()
+  })
 }
 
 /**

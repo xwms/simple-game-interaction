@@ -25,6 +25,7 @@ const CHANNEL_WHITELIST = [
   // 游戏检测
   'game:detect-local',
   'game:detect-result',
+  'game:check-port',
 
   // 房间
   'room:create',
@@ -42,6 +43,7 @@ const CHANNEL_WHITELIST = [
   'tunnel:traffic',
   'tunnel:connected',
   'tunnel:transport-changed',
+  'tunnel:latency',
   // 网络检测
   'network:detect',
   'network:detect-result',
@@ -60,7 +62,21 @@ const CHANNEL_WHITELIST = [
   // 通用
   'app:get-version',
   'app:get-platform',
-  'app:open-external'
+  'app:open-external',
+  'app:theme-changed',
+  'app:confirm-disconnect',
+  'app:open-log-file',
+  'app:open-log-dir',
+  'app:select-log-directory',
+  'app:set-log-file-path',
+  'app:set-close-behavior',
+
+  // 背景图片
+  'app:background-select',
+
+  // 窗口控制
+  'window:minimize',
+  'window:close'
 ]
 
 contextBridge.exposeInMainWorld('electronAPI', {

@@ -37,7 +37,7 @@ export class P2PSignaling {
       ...myInfo,
       type: 'connection-request'
     } as P2PSignalData)
-    logger.info(`已向 ${peerId} 发送连接请求`)
+    logger.info(`Sent connection request to ${peerId}`)
   }
 
   /**
@@ -51,7 +51,7 @@ export class P2PSignaling {
       ...myInfo,
       type: 'connection-accept'
     } as P2PSignalData)
-    logger.info(`已接受 ${peerId} 的连接请求`)
+    logger.info(`Accepted connection request from ${peerId}`)
   }
 
   /**
@@ -78,7 +78,7 @@ export class P2PSignaling {
       if (signalData && signalData.type) {
         handler(event.from, signalData)
       } else {
-        logger.warn('收到非法信令数据', event.signalData)
+        logger.warn(`Received invalid signal data: ${JSON.stringify(event.signalData)}`)
       }
     }
     this._relayClient.on('signal', this._boundOnSignal)

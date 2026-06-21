@@ -225,9 +225,9 @@ export class KcpTransport extends EventEmitter implements Transport {
           if (hasError) return
           hasError = true
           if (this._status === 'connecting') {
-            reject(new Error(`UDP 套接字[${i}]错误: ${err.message}`))
+            reject(new Error(`UDP socket[${i}] error: ${err.message}`))
           } else {
-            logger.error(`KCP socket[${i}]错误: ${err.message}`)
+            logger.error(`KCP socket[${i}] error: ${err.message}`)
           }
         })
 
@@ -243,7 +243,7 @@ export class KcpTransport extends EventEmitter implements Transport {
             socket.setRecvBufferSize(4 * 1024 * 1024)
             socket.setSendBufferSize(4 * 1024 * 1024)
           } catch (err) {
-            logger.warn(`socket[${i}] 设置 UDP 缓冲区失败: ${(err as Error).message}`)
+            logger.warn(`socket[${i}] set UDP buffer size failed: ${(err as Error).message}`)
           }
           boundCount++
           // 等待所有 socket 绑定完成后统一处理
@@ -273,7 +273,7 @@ export class KcpTransport extends EventEmitter implements Transport {
           if (this._role === 'active') {
             const targetAddr = peerInfo.kcpAddress || peerInfo.publicAddress
             if (!targetAddr) {
-              reject(new Error('KCP 缺少对端地址'))
+              reject(new Error('KCP missing peer address'))
               return
             }
 
@@ -291,7 +291,7 @@ export class KcpTransport extends EventEmitter implements Transport {
             }
             candidates.push({ address: targetAddr.ip, port: targetAddr.port })
 
-            logger.debug(`KCP active 打洞 → 候选: [${candidates.map(c => `${c.address}:${c.port}`).join(', ')}]`)
+            logger.debug(`KCP active hole punching → candidates: [${candidates.map(c => `${c.address}:${c.port}`).join(', ')}]`)
             this._probeTargets = candidates
 
             // 启动密集探针（所有 socket 同时发送）
@@ -302,10 +302,10 @@ export class KcpTransport extends EventEmitter implements Transport {
               this._connectResolve = null
               const warnInfo = process.env.NODE_ENV !== 'production'
                 ? ` (target=${targetAddr.ip}:${targetAddr.port})` : ''
-              reject(new Error(`UDP 打洞握手超时，对端无响应${warnInfo}`))
+              reject(new Error(`UDP hole punching handshake timeout, no response from peer${warnInfo}`))
             }, 2500)
           } else {
-            logger.info(`KCP 被动模式已就绪 (${totalSockets} sockets)`)
+            logger.info(`KCP passive mode ready (${totalSockets} sockets)`)
             resolve()
           }
         })
@@ -363,7 +363,7 @@ export class KcpTransport extends EventEmitter implements Transport {
    */
   async send(data: Buffer): Promise<void> {
     if (!this._kcp || this._status !== 'connected') {
-      throw new Error('KCP 传输未连接')
+      throw new Error('KCP transport not connected')
     }
 
     const mss = this._kcp.getMss()
@@ -379,7 +379,7 @@ export class KcpTransport extends EventEmitter implements Transport {
       framed.set(chunk, 1)
       const ret = this._kcp.send(framed)
       if (ret < 0) {
-        throw new Error(`KCP 发送失败 (ret=${ret})`)
+        throw new Error(`KCP send failed (ret=${ret})`)
       }
       this._trafficBytesSent += framed.length
       offset = end
@@ -387,7 +387,7 @@ export class KcpTransport extends EventEmitter implements Transport {
     }
 
     if (chunkCount > 1) {
-      logger.debug(`KCP send 拆分 ${data.length}B → ${chunkCount} 个块`)
+      logger.debug(`KCP send split ${data.length}B → ${chunkCount} chunks`)
     }
 
     this._kcp.update(Date.now())
@@ -404,7 +404,7 @@ export class KcpTransport extends EventEmitter implements Transport {
    */
   sendControl(type: string): void {
     if (!this._kcp || this._status !== 'connected') {
-      logger.warn(`KCP 发送控制帧失败: 未连接`)
+      logger.warn(`KCP send control frame failed: not connected`)
       return
     }
 
@@ -417,14 +417,14 @@ export class KcpTransport extends EventEmitter implements Transport {
         frameType = 0x02
         break
       default:
-        logger.warn(`未知的控制帧类型: ${type}`)
+        logger.warn(`Unknown control frame type: ${type}`)
         return
     }
 
     const frame = Buffer.from([frameType])
     const ret = this._kcp.send(frame)
     if (ret < 0) {
-      logger.warn(`KCP 控制帧发送失败 (ret=${ret})`)
+      logger.warn(`KCP control frame send failed (ret=${ret})`)
       return
     }
     this._trafficBytesSent += 1
@@ -611,7 +611,7 @@ export class KcpTransport extends EventEmitter implements Transport {
           this._connectResolve = null
         }
         this._clearHandshake()
-        logger.info(`KCP 连接已建立 (握手确认, ${rinfo.address}:${rinfo.port}, socket[${socketIndex}])`)
+        logger.info(`KCP connection established (handshake confirmed, ${rinfo.address}:${rinfo.port}, socket[${socketIndex}])`)
         return
       }
 
@@ -623,21 +623,21 @@ export class KcpTransport extends EventEmitter implements Transport {
         this._startLatencyMonitor()
         this._stopProbeLoop()
         this._closeExtraSockets()
-        logger.info(`KCP 被动连接已建立 ← ${rinfo.address}:${rinfo.port} (socket[${socketIndex}])`)
+        logger.info(`KCP passive connection established ← ${rinfo.address}:${rinfo.port} (socket[${socketIndex}])`)
         try {
           const socket = this._udpSockets[this._primarySocketIndex]
           if (socket) {
             socket.send(Buffer.alloc(1), 0, 1, rinfo.port, rinfo.address)
           }
         } catch {
-          logger.warn(`KCP 被动发送 ACK 失败`)
+          logger.warn(`KCP passive send ACK failed`)
         }
         return
       }
     }
 
     if (!this._kcp) {
-      logger.warn(`KCP 收到数据但无 KCP 实例, len=${msg.length}, from=${rinfo.address}:${rinfo.port}`)
+      logger.warn(`KCP received data but no KCP instance, len=${msg.length}, from=${rinfo.address}:${rinfo.port}`)
       return
     }
     const ret = this._kcp.input(msg)
@@ -647,7 +647,7 @@ export class KcpTransport extends EventEmitter implements Transport {
         this._kcpInputErrorCount++
         const conv = msg.length >= 28 ? msg.readUInt32LE(0) : -1
         const token = msg.length >= 28 ? msg.readUInt32LE(4) : -1
-        logger.warn(`KCP input 返回 ${ret}: conv=${conv}, token=${token}, len=${msg.length}`)
+        logger.warn(`KCP input returned ${ret}: conv=${conv}, token=${token}, len=${msg.length}`)
       }
     }
     this._drainKcp()
@@ -699,12 +699,12 @@ export class KcpTransport extends EventEmitter implements Transport {
         // KEEPALIVE 帧：仅更新时间戳，不传递到上层
         this._lastReceiveTime = Date.now()
       } else {
-        logger.warn(`KCP 收到未知帧类型: ${frameType}`)
+        logger.warn(`KCP received unknown frame type: ${frameType}`)
       }
     }
 
     if (dataCount > 0 || controlCount > 0) {
-      logger.debug(`_drainKcp 读取 ${dataCount} 条数据, ${controlCount} 条控制帧`)
+      logger.debug(`_drainKcp read ${dataCount} data messages, ${controlCount} control frames`)
     }
   }
 
@@ -723,7 +723,7 @@ export class KcpTransport extends EventEmitter implements Transport {
       this._drainKcp()
       const waitSnd = this._kcp.getWaitSnd()
       if (waitSnd > 2048) {
-        logger.warn(`KCP 发送队列积压: ${waitSnd} 个包`)
+        logger.warn(`KCP send queue backlog: ${waitSnd} packets`)
       }
     }, KCP_UPDATE_INTERVAL)
   }
@@ -817,10 +817,10 @@ export class KcpTransport extends EventEmitter implements Transport {
       if (this._status !== 'connected') return
       const elapsed = Date.now() - this._lastReceiveTime
       if (elapsed > IDLE_TIMEOUT) {
-        logger.warn(`KCP 空闲超时: ${elapsed}ms 未收到任何数据`)
+        logger.warn(`KCP idle timeout: ${elapsed}ms without any data`)
         this._lastReceiveTime = Date.now() // 防止重复触发
         this._setStatus('error')
-        this.emit(TRANSPORT_EVENTS.ERROR, new Error(`KCP 连接空闲超时 (${IDLE_TIMEOUT / 1000}s)`))
+        this.emit(TRANSPORT_EVENTS.ERROR, new Error(`KCP connection idle timeout (${IDLE_TIMEOUT / 1000}s)`))
       }
     }, IDLE_CHECK_INTERVAL)
   }
@@ -913,7 +913,7 @@ export class KcpTransport extends EventEmitter implements Transport {
       if (!socket) continue
       for (const target of this._probeTargets) {
         socket.send(this._probePacket, 0, PROBE_PACKET_SIZE, target.port, target.address, (err) => {
-          if (err) logger.warn(`KCP 探针发送失败 [${target.address}:${target.port}]: ${err.message}`)
+          if (err) logger.warn(`KCP probe send failed [${target.address}:${target.port}]: ${err.message}`)
         })
       }
     }
@@ -948,7 +948,7 @@ export class KcpTransport extends EventEmitter implements Transport {
     const exists = this._probeTargets.some(t => t.address === address && t.port === port)
     if (!exists) {
       this._probeTargets.push({ address, port })
-      logger.info(`KCP 添加外部探针目标: ${address}:${port}`)
+      logger.info(`KCP added external probe target: ${address}:${port}`)
     }
     if (!this._probeTimer) {
       this._startProbeLoop(false)

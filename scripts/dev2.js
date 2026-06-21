@@ -123,7 +123,8 @@ async function main() {
   }
 
   const userDataDir = path.join(ROOT, '.dev2-userdata')
-  const electron = spawn('npx', ['electron', '.', '--user-data-dir', userDataDir], {
+  const mainEntry = path.join(ROOT, 'src/main/main.js')
+  const electron = spawn('npx', ['electron', mainEntry, '--user-data-dir', userDataDir], {
     cwd: ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,

@@ -8,6 +8,22 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { TunnelStatus, TransportType } from '@shared/types'
+import { i18n } from '../i18n'
+
+/** 核心引擎/中继服务器返回的已知错误 → i18n key 映射 */
+const KNOWN_ERROR_PREFIXES: [string, string][] = [
+  ['Relay 连接超时', 'store.relayTimeout'],
+  ['IPv6 连接超时', 'store.relayTimeout'],
+  ['连接超时', 'store.relayTimeout'],
+  ['[room-not-found]', 'store.roomNotFound']
+]
+
+function _translateError(msg: string): string {
+  for (const [prefix, key] of KNOWN_ERROR_PREFIXES) {
+    if (msg.startsWith(prefix)) return i18n.global.t(key)
+  }
+  return msg
+}
 
 export const useTunnelStore = defineStore('tunnel', () => {
   // ─── 状态 ───────────────────────────────────────────
@@ -16,38 +32,58 @@ export const useTunnelStore = defineStore('tunnel', () => {
   const localPort = ref<number | null>(null)
   const bytesSent = ref(0)
   const bytesReceived = ref(0)
+  const latency = ref<number | null>(null)
   const error = ref<string | null>(null)
 
   // ─── IPC 监听（仅注册一次） ──────────────────────────
   let _initialized = false
-  function _ensureListeners(): void {
+  const _cleanups: (() => void)[] = []
+
+  function ensureListeners(): void {
     if (_initialized) return
     _initialized = true
 
-    window.electronAPI.on('tunnel:status', (newStatus: unknown) => {
+    const c1 = window.electronAPI.on('tunnel:status', (newStatus: unknown) => {
       status.value = newStatus as TunnelStatus
     })
+    _cleanups.push(c1)
 
-    window.electronAPI.on('tunnel:traffic', (stats: unknown) => {
+    const c2 = window.electronAPI.on('tunnel:traffic', (stats: unknown) => {
       const s = stats as { bytesSent: number; bytesReceived: number }
-      bytesSent.value = s.bytesSent
-      bytesReceived.value = s.bytesReceived
+      bytesSent.value = typeof s.bytesSent === 'number' ? s.bytesSent : 0
+      bytesReceived.value = typeof s.bytesReceived === 'number' ? s.bytesReceived : 0
     })
+    _cleanups.push(c2)
 
-    window.electronAPI.on('tunnel:error', (data: unknown) => {
+    const c3 = window.electronAPI.on('tunnel:error', (data: unknown) => {
       error.value = (data as { message: string }).message
       status.value = 'error'
     })
+    _cleanups.push(c3)
 
-    window.electronAPI.on('tunnel:connected', (data: unknown) => {
+    const c4 = window.electronAPI.on('tunnel:connected', (data: unknown) => {
       const d = data as { localPort: number; transportType?: string }
       localPort.value = d.localPort
       status.value = 'connected'
     })
+    _cleanups.push(c4)
 
-    window.electronAPI.on('tunnel:transport-changed', (transportType: unknown) => {
+    const c5 = window.electronAPI.on('tunnel:transport-changed', (transportType: unknown) => {
       transport.value = transportType as TransportType
     })
+    _cleanups.push(c5)
+
+    const c6 = window.electronAPI.on('tunnel:latency', (rtt: unknown) => {
+      latency.value = typeof rtt === 'number' ? rtt : null
+    })
+    if (c6) _cleanups.push(c6)
+  }
+
+  function destroy(): void {
+    _cleanups.forEach(fn => fn())
+    _cleanups.length = 0
+    _initialized = false
+    reset()
   }
 
   // ─── 方法 ───────────────────────────────────────────
@@ -58,7 +94,7 @@ export const useTunnelStore = defineStore('tunnel', () => {
    * @param port - 本地监听端口
    */
   async function startTunnel(port: number): Promise<void> {
-    _ensureListeners()
+    ensureListeners()
     status.value = 'connecting'
     try {
       const result = await window.electronAPI.invoke('tunnel:start', { port, roomCode: '' })
@@ -71,7 +107,7 @@ export const useTunnelStore = defineStore('tunnel', () => {
         throw new Error(result.error)
       }
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : '隧道启动失败'
+      error.value = err instanceof Error ? _translateError(err.message) : i18n.global.t('store.tunnelStartFailed')
       status.value = 'error'
     }
   }
@@ -80,7 +116,7 @@ export const useTunnelStore = defineStore('tunnel', () => {
    * 功能描述：停止隧道
    */
   async function stopTunnel(): Promise<void> {
-    _ensureListeners()
+    ensureListeners()
     try {
       await window.electronAPI.invoke('tunnel:stop')
     } finally {
@@ -96,6 +132,7 @@ export const useTunnelStore = defineStore('tunnel', () => {
     localPort.value = null
     bytesSent.value = 0
     bytesReceived.value = 0
+    latency.value = null
     error.value = null
   }
 
@@ -105,7 +142,10 @@ export const useTunnelStore = defineStore('tunnel', () => {
     localPort,
     bytesSent,
     bytesReceived,
+    latency,
     error,
+    ensureListeners,
+    destroy,
     startTunnel,
     stopTunnel,
     reset

@@ -163,7 +163,9 @@ async function main() {
   }
 
   // 启动 Electron（pipe 模式，避免子进程污染终端状态）
-  const electron = spawn('npx', ['electron', '.'], {
+  // 传递 main.js 的源文件路径（而非 dist/main/main.js），tsx 会在 dev 模式下加载 TS
+  const mainEntry = path.join(ROOT, 'src/main/main.js')
+  const electron = spawn('npx', ['electron', mainEntry], {
     cwd: ROOT,
     stdio: ['pipe', 'pipe', 'pipe'],
     shell: true,

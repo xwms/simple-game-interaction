@@ -19,17 +19,20 @@ export interface RelayConfig {
   reconnectMaxAttempts: number
   /** 重连基础延迟（毫秒，指数退避） */
   reconnectBaseDelay: number
-  /** 心跳间隔（毫秒） */
+  /** 心跳发送间隔（毫秒） */
   heartbeatInterval: number
+  /** 心跳超时阈值（毫秒，超过此时间未收到心跳响应/任何消息则触发重连，需 >= heartbeatInterval * 2） */
+  heartbeatTimeout: number
   /** 连接超时（毫秒） */
   connectTimeout: number
 }
 
 export const DEFAULT_RELAY_CONFIG: RelayConfig = {
-  relayUrl: 'ws://127.0.0.1:9800',
+  relayUrl: 'ws://159.75.150.37:9800',
   reconnectMaxAttempts: 5,
   reconnectBaseDelay: 1000,
   heartbeatInterval: 10000,
+  heartbeatTimeout: 30000,
   connectTimeout: 5000
 }
 

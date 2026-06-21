@@ -40,6 +40,8 @@ export class LocalTunnelServer extends EventEmitter {
   private _transport: Transport | null = null
   private _clientConnections: Set<net.Socket> = new Set()
   private _status: TransportStatus = 'disconnected'
+  /** 是否全部客户端已断开（用于检测客户端重连） */
+  private _allClientsDisconnected: boolean = false
 
   /** 当前监听端口（0 表示未启动） */
   get localPort(): number {
@@ -89,7 +91,7 @@ export class LocalTunnelServer extends EventEmitter {
             server.close()
             tryPort(attempt + 1)
           } else {
-            reject(new Error(`端口 ${targetPort} 绑定失败: ${err.message}`))
+            reject(new Error(`Failed to bind port ${targetPort}: ${err.message}`))
           }
         })
 
@@ -100,7 +102,7 @@ export class LocalTunnelServer extends EventEmitter {
           }
           this._server = server
           this._setStatus('connected')
-          logger.info(`本地隧道已启动 :${this._localPort}`)
+          logger.info(`Local tunnel server started on :${this._localPort}`)
           this.emit('started', { port: this._localPort })
           resolve(this._localPort)
         })
@@ -128,8 +130,9 @@ export class LocalTunnelServer extends EventEmitter {
       this._server = null
     }
     this._localPort = 0
+    this._allClientsDisconnected = false
     this._setStatus('disconnected')
-    logger.info('本地隧道已停止')
+    logger.info('Local tunnel server stopped')
     this.emit('stopped')
   }
 
@@ -162,12 +165,12 @@ export class LocalTunnelServer extends EventEmitter {
     })
 
     transport.on(TRANSPORT_EVENTS.ERROR, (err: unknown) => {
-      logger.error('Transport 错误', (err as Error).message)
+      logger.error(`Transport error: ${(err as Error).message}`)
       this.emit('error', err as Error)
     })
 
     transport.on(TRANSPORT_EVENTS.CLOSE, () => {
-      logger.info('Transport 已关闭, 等待切换...')
+      logger.info('Transport closed, waiting for switch...')
     })
   }
 
@@ -180,15 +183,22 @@ export class LocalTunnelServer extends EventEmitter {
    */
   private _onClientConnection(socket: net.Socket): void {
     socket.setNoDelay(true)
+
+    const wasAllDisconnected = this._allClientsDisconnected
+    this._allClientsDisconnected = false
     this._clientConnections.add(socket)
+    if (wasAllDisconnected) {
+      logger.info('Game client reconnection detected')
+      this.emit('client-reconnected')
+    }
 
     const remoteAddr = `${socket.remoteAddress}:${socket.remotePort}`
-    logger.info(`客户端已连接 [${remoteAddr}]`)
+    logger.info(`Client connected [${remoteAddr}]`)
 
     socket.on('data', (data: Buffer) => {
       if (this._transport && this._status === 'connected') {
         this._transport.send(data).catch((err: Error) => {
-          logger.error('Transport 发送失败', err.message)
+          logger.error(`Transport send failed: ${err.message}`)
         })
       }
       // 无 transport 时静默丢弃数据（等待降级完成）
@@ -196,12 +206,16 @@ export class LocalTunnelServer extends EventEmitter {
 
     socket.on('close', () => {
       this._clientConnections.delete(socket)
-      logger.info(`客户端已断开 [${remoteAddr}]`)
+      logger.info(`Client disconnected [${remoteAddr}]`)
+      if (this._clientConnections.size === 0) {
+        this._allClientsDisconnected = true
+        this.emit('all-clients-disconnected')
+      }
       this.emit('client-disconnected', { remoteAddr })
     })
 
     socket.on('error', (err: Error) => {
-      logger.warn(`客户端错误 [${remoteAddr}]: ${err.message}`)
+      logger.warn(`Client error [${remoteAddr}]: ${err.message}`)
       socket.destroy()
       this._clientConnections.delete(socket)
     })
@@ -215,9 +229,20 @@ export class LocalTunnelServer extends EventEmitter {
    * @param data - 要写入的数据
    */
   private _writeToAllClients(data: Buffer): void {
+    const clientCount = this._clientConnections.size
+    if (clientCount === 0) {
+      logger.debug(`Remote data arrived but no clients connected, dropping ${data.length}B`)
+      return
+    }
+    // 记录数据前 4 字节（hex）用于识别 Minecraft 协议包
+    const hexPrefix = data.length >= 4 ? data.subarray(0, 4).toString('hex') : data.toString('hex')
+    logger.debug(`Writing to ${clientCount} clients, data=${data.length}B, hex=${hexPrefix}`)
     for (const socket of this._clientConnections) {
       try {
-        socket.write(data)
+        const written = socket.write(data)
+        if (!written) {
+          logger.debug(`socket.write returned false (buffer full), data=${data.length}B`)
+        }
       } catch {
         socket.destroy()
         this._clientConnections.delete(socket)

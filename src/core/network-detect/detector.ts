@@ -54,17 +54,17 @@ async function checkInternetConnectivity(timeoutMs: number = 2000): Promise<bool
 }
 
 const MAPPING_LABELS: Record<string, string> = {
-  'endpoint-independent': 'Endpoint-Independent Mapping (端口复用)',
-  'address-dependent': 'Address-Dependent Mapping (随目标IP变化)',
-  'address-and-port-dependent': 'Address-and-Port-Dependent Mapping (随目标IP:端口变化)',
-  'unknown': '未知'
+  'endpoint-independent': 'Endpoint-Independent',
+  'address-dependent': 'Address-Dependent',
+  'address-and-port-dependent': 'Address-and-Port-Dependent',
+  'unknown': 'Unknown'
 }
 
 const FILTERING_LABELS: Record<string, string> = {
-  'endpoint-independent': 'Endpoint-Independent Filtering (放行任意来源)',
-  'address-dependent': 'Address-Dependent Filtering (放行同IP)',
-  'address-and-port-dependent': 'Address-and-Port-Dependent Filtering (仅放行精确地址)',
-  'unknown': '未知'
+  'endpoint-independent': 'Endpoint-Independent',
+  'address-dependent': 'Address-Dependent',
+  'address-and-port-dependent': 'Address-and-Port-Dependent',
+  'unknown': 'Unknown'
 }
 
 /** 缓存条目 */
@@ -115,10 +115,11 @@ export class NetworkDetector {
         ipv6: { available: false, hasPublicV6: false, addresses: [] },
         ipv4: {
           natType: 'unknown', publicIp: '', publicPort: 0,
-          mappingBehavior: 'unknown', filteringBehavior: 'unknown'
+          mappingBehavior: 'unknown', filteringBehavior: 'unknown',
+          localAddresses: []
         }
       }
-      logger.warn('没有联网, 跳过网络检测')
+      logger.warn('No internet connectivity, skipping network detection')
       _cache = { result: noNetResult, timestamp: Date.now() }
       return noNetResult
     }
@@ -133,17 +134,15 @@ export class NetworkDetector {
 
     // 日志：IPv6 + NAT 检测结果
     const ipv6Str = ipv6Result.hasPublicV6
-      ? `IPv6 公网可达 (${ipv6Result.publicAddresses[0] || ''})`
+      ? `IPv6 publicly reachable (${ipv6Result.publicAddresses[0] || ''})`
       : ipv6Result.available
-        ? `IPv6 可用 (${ipv6Result.addresses.length}个地址, 均无公网)`
-        : 'IPv6 不可用'
-    logger.info([
-      ipv6Str,
-      `NAT 类型: ${result.ipv4.natType}`,
-      `映射行为: ${MAPPING_LABELS[natResult.mappingBehavior] || natResult.mappingBehavior}`,
-      `过滤行为: ${FILTERING_LABELS[natResult.filteringBehavior] || natResult.filteringBehavior}`,
-      `公网地址: ${natResult.publicIp}:${natResult.publicPort}`
-    ].join(' | '))
+        ? `IPv6 available (${ipv6Result.addresses.length} addresses, none public)`
+        : 'IPv6 unavailable'
+    logger.info(ipv6Str)
+    logger.info(`NAT type: ${result.ipv4.natType}`)
+    logger.info(`Mapping behavior: ${MAPPING_LABELS[natResult.mappingBehavior] || natResult.mappingBehavior}`)
+    logger.info(`Filtering behavior: ${FILTERING_LABELS[natResult.filteringBehavior] || natResult.filteringBehavior}`)
+    logger.info(`Public address: ${natResult.publicIp}:${natResult.publicPort}`)
 
     // 写入缓存
     _cache = { result, timestamp: Date.now() }
@@ -189,7 +188,8 @@ export class NetworkDetector {
         publicIp: natResult.publicIp,
         publicPort: natResult.publicPort,
         mappingBehavior: natResult.mappingBehavior,
-        filteringBehavior: natResult.filteringBehavior
+        filteringBehavior: natResult.filteringBehavior,
+        localAddresses: natResult.localAddresses
       }
     }
   }

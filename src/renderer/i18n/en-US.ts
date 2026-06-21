@@ -44,7 +44,8 @@ export default {
     ipv6Available: 'IPv6: Available',
     ipv6NotAvailable: 'IPv6: N/A',
     downloading: 'Downloading {progress}%',
-    installUpdate: 'Install v{version}'
+    installUpdate: 'Install v{version}',
+    newBadge: 'NEW'
   },
   host: {
     title: 'Host Room',
@@ -68,6 +69,7 @@ export default {
   },
   join: {
     title: 'Join Room',
+    placeholder: 'Enter 6-digit room code',
     join: 'Join',
     back: 'Back',
     detecting: 'Detecting network environment...',

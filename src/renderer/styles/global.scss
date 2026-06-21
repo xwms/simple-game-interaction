@@ -48,3 +48,72 @@ body {
 .dark {
   color-scheme: dark;
 }
+
+// ─── 路由过渡动画 ──────────────────────────────────────
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+  position: absolute;
+  inset: 0;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+// ─── 卡片动态透明度 ────────────────────────────────────
+.card {
+  background-color: rgba(255, 255, 255, var(--card-opacity, 0.8));
+}
+.dark .card {
+  background-color: rgba(31, 41, 55, var(--card-opacity, 0.8));
+}
+
+.nav-bar {
+  background-color: rgba(255, 255, 255, var(--card-opacity, 0.8));
+}
+.dark .nav-bar {
+  background-color: rgba(17, 24, 39, var(--card-opacity, 0.8));
+}
+
+.log-viewer {
+  background-color: rgba(17, 24, 39, var(--card-opacity, 0.95));
+}
+
+.room-code-input input {
+  background-color: rgba(255, 255, 255, var(--card-opacity, 0.8));
+}
+.dark .room-code-input input {
+  background-color: rgba(31, 41, 55, var(--card-opacity, 0.8));
+}
+
+// ─── 日志过滤切换滑动动画 ──────────────────────────────
+.slide-left-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.slide-left-enter-active {
+  transition: transform 0.2s ease 0.05s, opacity 0.2s ease 0.05s;
+}
+.slide-left-leave-to {
+  transform: translateX(-30%);
+  opacity: 0;
+}
+.slide-left-enter-from {
+  transform: translateX(30%);
+  opacity: 0;
+}
+
+.slide-right-leave-active {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.slide-right-enter-active {
+  transition: transform 0.2s ease 0.05s, opacity 0.2s ease 0.05s;
+}
+.slide-right-leave-to {
+  transform: translateX(30%);
+  opacity: 0;
+}
+.slide-right-enter-from {
+  transform: translateX(-30%);
+  opacity: 0;
+}

@@ -44,7 +44,8 @@ export default {
     ipv6Available: 'IPv6：可用',
     ipv6NotAvailable: 'IPv6：不可用',
     downloading: '下载中 {progress}%',
-    installUpdate: '安装 v{version}'
+    installUpdate: '安装 v{version}',
+    newBadge: '新版本'
   },
   host: {
     title: '创建房间',
@@ -68,6 +69,7 @@ export default {
   },
   join: {
     title: '加入房间',
+    placeholder: '输入 6 位房间码',
     join: '加入',
     back: '返回',
     detecting: '正在检测网络环境...',

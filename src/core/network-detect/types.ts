@@ -72,7 +72,8 @@ export function toNetworkInfo(
       publicIp: nat.publicIp,
       publicPort: nat.publicPort,
       mappingBehavior: nat.mappingBehavior,
-      filteringBehavior: nat.filteringBehavior
+      filteringBehavior: nat.filteringBehavior,
+      localAddresses: nat.localAddresses
     }
   }
 }

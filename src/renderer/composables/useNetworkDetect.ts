@@ -8,6 +8,7 @@
 
 import { ref } from 'vue'
 import type { NetworkInfo } from '@shared/types'
+import { i18n } from '../i18n'
 
 // ─── 模块级单例状态 ───────────────────────────────────
 const _status = ref<'idle' | 'detecting' | 'done' | 'error'>('idle')
@@ -23,19 +24,16 @@ let _retryTimer: ReturnType<typeof setTimeout> | null = null
  * @param ipv4 - IPv4 网络信息（含 publicIp，用于区分"未联网"和"UDP 受限"）
  */
 export function natTypeLabel(ipv4: NetworkInfo['ipv4']): string {
-  // 无公网 IP 且 NAT unknown → 未联网（区别于检测成功但 NAT 未知）
+  // 无公网 IP 且 NAT unknown → 无法检测（区别于已检测但 NAT 未知）
   if (ipv4.natType === 'unknown' && !ipv4.publicIp) {
-    return '未联网'
+    return ''
   }
-  const labels: Record<string, string> = {
-    'none': '无 NAT（公网 IP）',
-    'full-cone': 'Full Cone NAT',
-    'restricted-cone': 'Restricted Cone NAT',
-    'port-restricted-cone': 'Port Restricted Cone NAT',
-    'symmetric': 'Symmetric NAT（需中继）',
-    'unknown': '未知（UDP 受限）'
-  }
-  return labels[ipv4.natType] || ipv4.natType
+  const key = ipv4.natType === 'easy-nat' ? 'nat.easyNat'
+    : ipv4.natType === 'hard-nat' ? 'nat.hardNat'
+    : ipv4.natType === 'none' ? 'nat.none'
+    : ipv4.natType === 'unknown' ? 'nat.unknown'
+    : ''
+  return key ? i18n.global.t(key) : ipv4.natType
 }
 
 /**
@@ -44,12 +42,12 @@ export function natTypeLabel(ipv4: NetworkInfo['ipv4']): string {
 export function inferConnectionPath(info: NetworkInfo): { type: string; label: string } {
   // 未联网
   if (!info.ipv4.publicIp && info.ipv4.natType === 'unknown' && !info.ipv6.available) {
-    return { type: 'none', label: '未联网' }
+    return { type: 'none', label: i18n.global.t('home.offline') }
   }
   if (info.ipv6.hasPublicV6 && info.ipv6.available) {
     return { type: 'ipv6', label: 'IPv6 直连（低延迟）' }
   }
-  if (info.ipv4.natType === 'symmetric' || info.ipv4.natType === 'unknown') {
+  if (info.ipv4.natType === 'hard-nat' || info.ipv4.natType === 'unknown') {
     return { type: 'relay', label: '需中继转发' }
   }
   if (info.ipv4.natType === 'none') {

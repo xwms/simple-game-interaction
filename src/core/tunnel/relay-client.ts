@@ -50,10 +50,17 @@ export class RelayClient extends EventEmitter {
   private _roomCode: string = ''
   private _reconnectAttempts: number = 0
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private _heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private _trafficBytesSent: number = 0
   private _trafficBytesReceived: number = 0
   private _trafficTimer: ReturnType<typeof setInterval> | null = null
+  /** 心跳发送指数退避定时器 */
+  private _heartbeatBackoffTimer: ReturnType<typeof setTimeout> | null = null
+  /** Pong 超时检测定时器 */
+  private _pongCheckTimer: ReturnType<typeof setInterval> | null = null
+  /** 上次收到心跳响应/任何消息的时间戳（用于超时检测） */
+  private _lastPongTime: number = 0
+  /** 连续心跳发送失败次数（用于指数退避） */
+  private _heartbeatFailures: number = 0
   /** 是否为房主端（影响二进制帧解析格式） */
   private _isHost: boolean = false
   /** 待响应请求表 <messageId, { resolve, reject, timer }> */
@@ -67,6 +74,15 @@ export class RelayClient extends EventEmitter {
   constructor(config?: Partial<RelayConfig>) {
     super()
     this._config = { ...DEFAULT_RELAY_CONFIG, ...config }
+  }
+
+  /**
+   * 功能描述：更新中继服务器地址（下次 connect 时生效）
+   *
+   * @param url - WebSocket 中继服务器地址
+   */
+  setRelayUrl(url: string): void {
+    this._config.relayUrl = url
   }
 
   /** 设为房主端模式（改变二进制帧解析方式） */
@@ -110,6 +126,7 @@ export class RelayClient extends EventEmitter {
       return
     }
 
+    this._cancelReconnect()
     this._state = 'connecting'
     this._cleanupWebSocket()
 
@@ -118,7 +135,7 @@ export class RelayClient extends EventEmitter {
         const ws = new WebSocket(this._config.relayUrl)
         const timeoutTimer = setTimeout(() => {
           ws.close()
-          reject(new Error(`Relay 连接超时 (${this._config.connectTimeout}ms)`))
+          reject(new Error('Relay connection timed out'))
         }, this._config.connectTimeout)
 
         ws.onopen = () => {
@@ -126,8 +143,12 @@ export class RelayClient extends EventEmitter {
           this._ws = ws
           this._state = 'connected'
           this._reconnectAttempts = 0
+          this._lastPongTime = Date.now()
+          this._heartbeatFailures = 0
           this._startHeartbeat()
+          this._startPongCheck()
           this._startTrafficMonitor()
+
           this.emit('connected')
           resolve()
         }
@@ -137,9 +158,10 @@ export class RelayClient extends EventEmitter {
         }
 
         ws.onclose = (event: WebSocket.CloseEvent) => {
-          logger.warn(`WebSocket 关闭: code=${event.code} reason=${event.reason || '无'}`)
+          logger.warn(`Relay connection disconnected (code: ${event.code}, reason: ${event.reason || 'none'})`)
           this._state = 'disconnected'
           this._stopHeartbeat()
+          this._stopPongCheck()
           this._stopTrafficMonitor()
           this.emit('disconnected')
           this._attemptReconnect()
@@ -149,7 +171,7 @@ export class RelayClient extends EventEmitter {
           // error 事件后 onclose 一定会触发，在 close 中处理重连
         }
       } catch (err) {
-        reject(new Error(`Relay 连接失败: ${(err as Error).message}`))
+        reject(new Error(`Relay connection failed: ${(err as Error).message}`))
       }
     })
   }
@@ -162,12 +184,17 @@ export class RelayClient extends EventEmitter {
   async disconnect(): Promise<void> {
     this._cancelReconnect()
     this._stopHeartbeat()
+    this._stopPongCheck()
     this._stopTrafficMonitor()
-    this._rejectAllPending(new Error('连接已断开'))
+    this._rejectAllPending(new Error('Connection closed'))
     this._cleanupWebSocket()
+    // _cleanupWebSocket 会触发 onclose → _attemptReconnect，
+    // 需要二次取消防止泄漏的重连定时器
+    this._cancelReconnect()
     this._state = 'disconnected'
     this._memberId = ''
     this._roomCode = ''
+    this._isHost = false
     this._reconnectAttempts = 0
     this._trafficBytesSent = 0
     this._trafficBytesReceived = 0
@@ -303,7 +330,7 @@ export class RelayClient extends EventEmitter {
    */
   private _sendMessage(type: string, data?: unknown): void {
     if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-      throw new Error('Relay 未连接')
+      throw new Error('Relay not connected')
     }
 
     const msg: Record<string, unknown> = { type }
@@ -327,7 +354,7 @@ export class RelayClient extends EventEmitter {
       const messageId = `req_${++this._messageIdSeq}_${Date.now()}`
       const timer = setTimeout(() => {
         this._pendingRequests.delete(messageId)
-        reject(new Error(`请求超时: ${type}`))
+        reject(new Error(`Request timed out: ${type}`))
       }, 30000)
 
       this._pendingRequests.set(messageId, { resolve: resolve as (d: unknown) => void, reject, timer })
@@ -340,7 +367,7 @@ export class RelayClient extends EventEmitter {
       } catch (err) {
         this._pendingRequests.delete(messageId)
         clearTimeout(timer)
-        reject(new Error(`发送失败: ${(err as Error).message}`))
+        reject(new Error(`Send failed: ${(err as Error).message}`))
       }
     })
   }
@@ -375,11 +402,14 @@ export class RelayClient extends EventEmitter {
    * @param text - JSON 字符串
    */
   private _handleTextMessage(text: string): void {
+    // 任何来自服务器的消息都视为连接存活证明
+    this._lastPongTime = Date.now()
+
     let msg: { type: string; messageId?: string; data?: unknown; error?: { code: string; message: string } }
     try {
       msg = JSON.parse(text)
     } catch {
-      logger.warn('收到非法 JSON 消息', text)
+      logger.warn(`Received invalid JSON message: ${text}`)
       return
     }
 
@@ -413,13 +443,14 @@ export class RelayClient extends EventEmitter {
         this.emit(RELAY_MESSAGE_TYPES.ROOM_CLOSED)
         break
       case RELAY_MESSAGE_TYPES.HEARTBEAT:
-        // 心跳响应不做特殊处理
+        // 心跳响应（或服务端主动心跳）— 更新存活时间戳
+        this._lastPongTime = Date.now()
         break
       case RELAY_MESSAGE_TYPES.ERROR:
         this.emit(RELAY_MESSAGE_TYPES.ERROR, msg.error)
         break
       default:
-        logger.debug('未处理的消息类型', msg.type)
+        logger.debug(`Unhandled message type: ${msg.type}`)
     }
   }
 
@@ -441,12 +472,12 @@ export class RelayClient extends EventEmitter {
     if (this._isHost) {
       // 房主端：[4B sourceIdLen][sourceId][4B payloadLen][payload]
       if (raw.length < 8) {
-        logger.warn('收到过短的二进制帧', raw.length)
+        logger.warn(`Received undersized binary frame: ${raw.length} bytes`)
         return
       }
       const idLen = raw.readUInt32BE(0)
       if (raw.length < 4 + idLen + 4) {
-        logger.warn('收到不完整的二进制帧')
+        logger.warn('Received incomplete binary frame')
         return
       }
       sourceMemberId = raw.subarray(4, 4 + idLen).toString('utf8')
@@ -463,44 +494,135 @@ export class RelayClient extends EventEmitter {
     } else {
       // 加入者端：[4B payloadLen][payload]
       if (raw.length < BINARY_FRAME_HEADER_SIZE) {
-        logger.warn('收到过短的二进制帧', raw.length)
+        logger.warn(`Received undersized binary frame: ${raw.length} bytes`)
         return
       }
       const payloadLen = raw.readUInt32BE(0)
-      payload = raw.subarray(BINARY_FRAME_HEADER_SIZE, BINARY_FRAME_HEADER_SIZE + payloadLen)
+      // 中继服务器可能不添加 4B 长度头部，检测超界时使用整个消息体
+      if (BINARY_FRAME_HEADER_SIZE + payloadLen > raw.length) {
+        payload = raw
+      } else {
+        payload = raw.subarray(BINARY_FRAME_HEADER_SIZE, BINARY_FRAME_HEADER_SIZE + payloadLen)
+      }
     }
 
     this._trafficBytesReceived += payload.length
     this.emit(RELAY_MESSAGE_TYPES.RELAY_DATA, payload, sourceMemberId)
   }
 
-  // ─── 心跳 ───────────────────────────────────────────
+  // ─── 心跳（指数退避） ───────────────────────────────
 
   /**
-   * 功能描述：启动心跳定时器
+   * 功能描述：启动心跳系统（指数退避发送 + 独立超时检测）
    *
-   * 逻辑说明：每 10 秒发送一次心跳消息维持连接。
+   * 逻辑说明：借鉴 frp 的双协程设计：
+   *           1. 心跳发送：使用 setTimeout 链，发送失败时指数退避重试
+   *              （1s→2s→4s→...，上限为 heartbeatInterval），
+   *              成功时重置为正常间隔。
+   *           2. 超时检测：独立 1s 定时器检查 _lastPongTime，
+   *              超过 heartbeatTimeout 未收到消息则触发重连。
+   *           连接上来的任何服务器消息都会更新 _lastPongTime，
+   *           因此即使服务端未回显心跳也能正常工作。
    */
   private _startHeartbeat(): void {
     this._stopHeartbeat()
-    this._heartbeatTimer = setInterval(() => {
-      try {
-        this._sendMessage(RELAY_MESSAGE_TYPES.HEARTBEAT, {
-          roomCode: this._roomCode || undefined
-        })
-      } catch {
-        // 连接已断开，心跳失败可忽略
-      }
-    }, this._config.heartbeatInterval)
+    this._lastPongTime = Date.now()
+    this._heartbeatFailures = 0
+    this._scheduleNextHeartbeat(this._config.heartbeatInterval)
   }
 
   /**
-   * 功能描述：停止心跳定时器
+   * 功能描述：调度下一次心跳发送
+   *
+   * @param delay - 下次发送延迟（毫秒）
+   */
+  private _scheduleNextHeartbeat(delay: number): void {
+    this._stopHeartbeatBackoff()
+    this._heartbeatBackoffTimer = setTimeout(() => {
+      this._doHeartbeat()
+    }, delay)
+  }
+
+  /**
+   * 功能描述：执行一次心跳发送
+   *
+   * 逻辑说明：发送失败时指数退避（并发失败次数递增），
+   *           成功时重置间隔为配置值。
+   */
+  private _doHeartbeat(): void {
+    try {
+      this._sendMessage(RELAY_MESSAGE_TYPES.HEARTBEAT, {
+        roomCode: this._roomCode || undefined
+      })
+      // 发送成功 → 连接可写即视为存活（更新 _lastPongTime 阻止 pong 超时误判）
+      this._heartbeatFailures = 0
+      this._lastPongTime = Date.now()
+      this._scheduleNextHeartbeat(this._config.heartbeatInterval)
+    } catch {
+      // 发送失败 → 指数退避
+      this._heartbeatFailures++
+      const backoffDelay = Math.min(
+        this._config.reconnectBaseDelay * Math.pow(2, this._heartbeatFailures - 1),
+        this._config.heartbeatInterval
+      )
+      logger.debug(`Heartbeat send failed, backing off ${backoffDelay}ms (attempt ${this._heartbeatFailures})`)
+      this._scheduleNextHeartbeat(backoffDelay)
+    }
+  }
+
+  /**
+   * 功能描述：停止心跳发送定时器
    */
   private _stopHeartbeat(): void {
-    if (this._heartbeatTimer) {
-      clearInterval(this._heartbeatTimer)
-      this._heartbeatTimer = null
+    this._stopHeartbeatBackoff()
+  }
+
+  /**
+   * 功能描述：停止心跳退避定时器
+   */
+  private _stopHeartbeatBackoff(): void {
+    if (this._heartbeatBackoffTimer) {
+      clearTimeout(this._heartbeatBackoffTimer)
+      this._heartbeatBackoffTimer = null
+    }
+  }
+
+  // ─── 心跳超时检测 ────────────────────────────────────
+
+  /**
+   * 功能描述：启动 Pong 超时检测
+   *
+   * 逻辑说明：每秒检查一次 _lastPongTime 和 _heartbeatFailures。
+   *           心跳发送成功即更新 _lastPongTime（TCP 可写视为存活），
+   *           所以超时仅发生在：心跳发送连续失败 + 长时间无服务器消息。
+   *           双重条件防止中继服务器不回显心跳时误判超时。
+   *
+   * 触发条件：距上次心跳成功 / 收到消息 > heartbeatTimeout
+   *           且连续心跳发送失败 >= 3 次
+   */
+  private _startPongCheck(): void {
+    this._stopPongCheck()
+    this._pongCheckTimer = setInterval(() => {
+      const elapsed = Date.now() - this._lastPongTime
+      if (elapsed > this._config.heartbeatTimeout && this._heartbeatFailures >= 3) {
+        logger.warn(`Heartbeat timeout (${elapsed}ms no response, ${this._heartbeatFailures} consecutive send failures), triggering reconnect`)
+        this._state = 'disconnected'
+        this._stopHeartbeat()
+        this._stopPongCheck()
+        this._cleanupWebSocket()
+        this.emit('disconnected')
+        this._attemptReconnect()
+      }
+    }, 1000)
+  }
+
+  /**
+   * 功能描述：停止 Pong 超时检测
+   */
+  private _stopPongCheck(): void {
+    if (this._pongCheckTimer) {
+      clearInterval(this._pongCheckTimer)
+      this._pongCheckTimer = null
     }
   }
 
@@ -538,13 +660,23 @@ export class RelayClient extends EventEmitter {
   /**
    * 功能描述：尝试重连（指数退避）
    *
-   * 逻辑说明：最大重试次数后停止，发射错误事件。
+   * 逻辑说明：仅在未加入房间时自动重连。若已在房间中（_roomCode 非空），
+   *           跳过重连：重建 WebSocket 无法恢复房间关联。
+   *           服务端在旧连接断开时已清理房间状态。
+   *           最大重试次数后停止，发射错误事件。
    *           延迟计算：baseDelay * 2^attempt，上限 30 秒。
    */
   private _attemptReconnect(): void {
+    // 已在房间中时跳过自动重连，由上层（TunnelManager）处理房间清理
+    if (this._roomCode) {
+      logger.warn('Already in a room, skipping auto-reconnect (need to create/join a new room)')
+      this.emit('error', new Error('Relay connection lost, room is no longer valid'))
+      return
+    }
+
     if (this._reconnectAttempts >= this._config.reconnectMaxAttempts) {
-      logger.error('Relay 重连次数已达上限', this._reconnectAttempts)
-      this.emit('error', new Error(`Relay 重连失败 (已重试 ${this._reconnectAttempts} 次)`))
+      logger.error(`Relay reconnect attempts reached limit: ${this._reconnectAttempts}`)
+      this.emit('error', new Error(`Relay reconnect failed (${this._reconnectAttempts} attempts made)`))
       return
     }
 
@@ -554,7 +686,7 @@ export class RelayClient extends EventEmitter {
     )
     this._reconnectAttempts++
 
-    logger.info(`Relay 将在 ${delay}ms 后重连 (第 ${this._reconnectAttempts} 次)`)
+    logger.info(`Relay will reconnect in ${delay}ms (attempt ${this._reconnectAttempts})`)
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null
       try {
@@ -584,7 +716,7 @@ export class RelayClient extends EventEmitter {
    */
   private _assertConnected(): void {
     if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-      throw new Error('Relay 未连接，请先调用 connect()')
+      throw new Error('Relay not connected, please call connect() first')
     }
   }
 

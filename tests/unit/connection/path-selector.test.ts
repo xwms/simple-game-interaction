@@ -7,6 +7,10 @@ import { selectPath } from '../../../src/core/connection/path-selector'
 import type { NetworkInfo, NatType } from '../../../src/shared/types'
 
 function makeNetworkInfo(ipv6: { available: boolean; hasPublicV6: boolean }, natType: NatType): NetworkInfo {
+  const mappingBehavior = natType === 'hard-nat' ? 'address-and-port-dependent'
+    : natType === 'unknown' ? 'unknown'
+    : 'endpoint-independent'
+
   return {
     ipv6: {
       available: ipv6.available,
@@ -16,7 +20,10 @@ function makeNetworkInfo(ipv6: { available: boolean; hasPublicV6: boolean }, nat
     ipv4: {
       natType,
       publicIp: '1.2.3.4',
-      publicPort: 12345
+      publicPort: 12345,
+      mappingBehavior,
+      filteringBehavior: natType === 'unknown' ? 'unknown' : 'endpoint-independent',
+      localAddresses: []
     }
   }
 }
@@ -40,40 +47,42 @@ describe('selectPath 路径选择', () => {
   })
 
   it('双方 NAT 均可穿透时 P2P 可用', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'full-cone')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'full-cone')
+    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
+    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
     const paths = selectPath(host, guest)
 
     expect(paths.some(p => p.type === 'p2p')).toBe(true)
   })
 
-  it('一方 Symmetric NAT 时不应返回 P2P', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'symmetric')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'full-cone')
+  it('一方 HardNAT 时不应返回 P2P', () => {
+    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
+    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
     const paths = selectPath(host, guest)
 
     expect(paths.every(p => p.type !== 'p2p')).toBe(true)
+    expect(paths[paths.length - 1].type).toBe('relay')
   })
 
   it('一方 Unknown NAT 时不应返回 P2P（保守策略）', () => {
     const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'unknown')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'full-cone')
+    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'easy-nat')
     const paths = selectPath(host, guest)
 
     expect(paths.every(p => p.type !== 'p2p')).toBe(true)
   })
 
-  it('双方 Symmetric NAT 时仅返回 Relay', () => {
-    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'symmetric')
-    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'symmetric')
+  it('双方 HardNAT 时不应返回 P2P', () => {
+    const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
+    const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, 'hard-nat')
     const paths = selectPath(host, guest)
 
-    expect(paths).toHaveLength(1)
+    expect(paths.every(p => p.type !== 'p2p')).toBe(true)
+    expect(paths.length).toBe(1)
     expect(paths[0].type).toBe('relay')
   })
 
-  it('IPv6 + 非 Symmetric NAT 应返回 IPv6 > P2P > Relay', () => {
-    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'full-cone')
+  it('IPv6 + EasyNAT 应返回 IPv6 > P2P > Relay', () => {
+    const host = makeNetworkInfo({ available: true, hasPublicV6: true }, 'easy-nat')
     const guest = makeNetworkInfo({ available: true, hasPublicV6: true }, 'none')
     const paths = selectPath(host, guest)
 
@@ -115,13 +124,12 @@ describe('selectPath 路径选择', () => {
   })
 
   it('所有 NAT 类型正确覆盖', () => {
-    const natTypes: NatType[] = ['none', 'full-cone', 'restricted-cone', 'port-restricted-cone', 'symmetric', 'unknown']
+    const natTypes: NatType[] = ['none', 'easy-nat', 'hard-nat', 'unknown']
     const host = makeNetworkInfo({ available: false, hasPublicV6: false }, 'none')
 
     for (const nat of natTypes) {
       const guest = makeNetworkInfo({ available: false, hasPublicV6: false }, nat)
       const paths = selectPath(host, guest)
-      // Should always include relay
       expect(paths.some(p => p.type === 'relay')).toBe(true)
     }
   })

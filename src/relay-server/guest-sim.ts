@@ -14,7 +14,7 @@
 import WebSocket from 'ws'
 import * as net from 'net'
 
-const RELAY_URL = 'ws://127.0.0.1:9800'
+const RELAY_URL = 'ws://159.75.150.37:9800'
 const LOCAL_PORT = parseInt(process.argv[3] || '5555', 10)
 
 let ws: WebSocket | null = null

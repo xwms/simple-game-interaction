@@ -1,0 +1,24 @@
+{
+  "name": "kcp-test-bundle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KCP UDP 打洞测试 — 最小依赖包",
+  "scripts": {
+    "test:local": "npx tsx scripts/test-local.ts",
+    "test:cross": "npx tsx scripts/test-cross.ts --mode",
+    "test:host": "npx tsx scripts/test-cross.ts --mode host",
+    "test:guest": "npx tsx scripts/test-cross.ts --mode guest",
+    "test:game:host": "npx tsx scripts/test-kcp-game.ts --mode host",
+    "test:game:guest": "npx tsx scripts/test-kcp-game.ts --mode guest"
+  },
+  "dependencies": {
+    "denque": "^2.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/ws": "^8.5.0",
+    "@types/node": "^22.0.0"
+  }
+}

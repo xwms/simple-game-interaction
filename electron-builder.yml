@@ -9,6 +9,7 @@ directories:
 files:
   - dist/main/**/*
   - dist/renderer/**/*
+  - resources/icons/**/*
   - package.json
 
 win:
@@ -18,12 +19,19 @@ win:
         - x64
   icon: resources/icons/icon.ico
   artifactName: ${productName}-Setup-${version}-win.${ext}
+  # 代码签名（需购买 EV Code Signing Certificate）
+  # certificateFile: ${WIN_CERT_FILE}
+  # certificatePassword: ${WIN_CERT_PASSWORD}
+  # signDlls: true
 
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  allowElevation: false
 
 mac:
   target:
@@ -34,6 +42,12 @@ mac:
   icon: resources/icons/icon.icns
   artifactName: ${productName}-${version}-mac.${ext}
   category: public.app-category.utilities
+  # 代码签名（需加入 Apple Developer Program）
+  # identity: ${MAC_DEV_IDENTITY}
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # notarize:
+  #   teamId: ${APPLE_TEAM_ID}
 
 dmg:
   contents:
@@ -58,10 +72,13 @@ linux:
 
 publish:
   - provider: generic
-    url: https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/download
+    url: https://gitee.com/xwms/simple-game-interaction/releases/download
   - provider: github
-    owner: ${GH_OWNER}
-    repo: ${GH_REPO}
+    owner: xwms
+    repo: simple-game-interaction
+
+releaseInfo:
+  releaseNotesFile: CHANGELOG.md
 
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
