@@ -68,6 +68,13 @@ const PROBE_MAGIC = Buffer.from([0xCB, 0xCE])
 /** KCP input -1 警告上限（连接建立后残余探针包可能误入 KCP） */
 const MAX_KCP_INPUT_WARNINGS = 5
 
+/** 心跳发送间隔（毫秒） */
+const KEEPALIVE_INTERVAL = 5000
+/** 无数据超时（毫秒），超过此时间未收到任何 KCP 包视为断开 */
+const IDLE_TIMEOUT = 15000
+/** 空闲检测轮询间隔（毫秒） */
+const IDLE_CHECK_INTERVAL = 5000
+
 /**
  * 功能描述：KCP UDP 打洞传输（多 socket 版）
  *
@@ -125,6 +132,12 @@ export class KcpTransport extends EventEmitter implements Transport {
    * drainPendingData() 可在注册监听器后回放。
    */
   private _pendingData: Buffer[] = []
+  /** 最后收到 KCP 数据的时间戳（用于空闲超时检测） */
+  private _lastReceiveTime: number = 0
+  /** 心跳发送定时器 */
+  private _keepaliveTimer: ReturnType<typeof setInterval> | null = null
+  /** 空闲超时检测定时器 */
+  private _idleCheckTimer: ReturnType<typeof setInterval> | null = null
   get status(): TransportStatus {
     return this._status
   }
@@ -325,6 +338,7 @@ export class KcpTransport extends EventEmitter implements Transport {
     this._publicPort = null
     this._pendingData = []
     this._connectionEstablished = false
+    this._lastReceiveTime = 0
     for (const socket of this._udpSockets) {
       try { socket.close() } catch { /* 忽略 */ }
     }
@@ -398,6 +412,9 @@ export class KcpTransport extends EventEmitter implements Transport {
     switch (type) {
       case 'reset':
         frameType = 0x01
+        break
+      case 'keepalive':
+        frameType = 0x02
         break
       default:
         logger.warn(`未知的控制帧类型: ${type}`)
@@ -573,6 +590,9 @@ export class KcpTransport extends EventEmitter implements Transport {
       return
     }
 
+    // 经过 STUN/探针过滤，确认为对端 KCP 数据，更新时间戳
+    this._lastReceiveTime = Date.now()
+
     // 首包处理（连接建立前收到的第一个非 STUN 包）
     if (!this._connectionEstablished && this._status === 'connecting' && !this._kcp) {
       this._connectionEstablished = true
@@ -675,6 +695,9 @@ export class KcpTransport extends EventEmitter implements Transport {
       } else if (frameType === 0x01) {
         this.emit(TRANSPORT_EVENTS.RESET)
         controlCount++
+      } else if (frameType === 0x02) {
+        // KEEPALIVE 帧：仅更新时间戳，不传递到上层
+        this._lastReceiveTime = Date.now()
       } else {
         logger.warn(`KCP 收到未知帧类型: ${frameType}`)
       }
@@ -691,6 +714,8 @@ export class KcpTransport extends EventEmitter implements Transport {
   private _startUpdateLoop(): void {
     if (this._updateTimer) return
     this._startTrafficMonitor()
+    this._startKeepalive()
+    this._startIdleCheck()
     this._updateTimer = setInterval(() => {
       if (!this._kcp) return
       this._drainKcp()
@@ -711,6 +736,8 @@ export class KcpTransport extends EventEmitter implements Transport {
       clearInterval(this._updateTimer)
       this._updateTimer = null
     }
+    this._stopKeepalive()
+    this._stopIdleCheck()
   }
 
   /**
@@ -743,6 +770,68 @@ export class KcpTransport extends EventEmitter implements Transport {
     if (this._trafficTimer) {
       clearInterval(this._trafficTimer)
       this._trafficTimer = null
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  心跳 + 空闲超时（KCP 层保活）
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * 功能描述：启动 KCP 心跳发送
+   *
+   * 逻辑说明：每 5 秒发送一次 KEEPALIVE 帧 (0x02)，使对端知道本端仍在线。
+   *           心跳帧仅更新接收侧时间戳，不会传递给应用层。
+   *           连接建立后启动，断开时停止。
+   */
+  private _startKeepalive(): void {
+    this._stopKeepalive()
+    this._keepaliveTimer = setInterval(() => {
+      if (this._status !== 'connected') return
+      this.sendControl('keepalive')
+    }, KEEPALIVE_INTERVAL)
+  }
+
+  /**
+   * 功能描述：停止心跳发送
+   */
+  private _stopKeepalive(): void {
+    if (this._keepaliveTimer) {
+      clearInterval(this._keepaliveTimer)
+      this._keepaliveTimer = null
+    }
+  }
+
+  /**
+   * 功能描述：启动空闲超时检测
+   *
+   * 逻辑说明：每 5s 检查是否超过 IDLE_TIMEOUT（15s）未收到任何 KCP 数据。
+   *           超时说明对端已不可达（UDP 无连接状态），
+   *           将状态设为 error 触发上层降级或重连。
+   *           收到首包时初始化时间戳，后续每次收到 KCP 包时更新。
+   */
+  private _startIdleCheck(): void {
+    this._stopIdleCheck()
+    this._lastReceiveTime = Date.now()
+    this._idleCheckTimer = setInterval(() => {
+      if (this._status !== 'connected') return
+      const elapsed = Date.now() - this._lastReceiveTime
+      if (elapsed > IDLE_TIMEOUT) {
+        logger.warn(`KCP 空闲超时: ${elapsed}ms 未收到任何数据`)
+        this._lastReceiveTime = Date.now() // 防止重复触发
+        this._setStatus('error')
+        this.emit(TRANSPORT_EVENTS.ERROR, new Error(`KCP 连接空闲超时 (${IDLE_TIMEOUT / 1000}s)`))
+      }
+    }, IDLE_CHECK_INTERVAL)
+  }
+
+  /**
+   * 功能描述：停止空闲超时检测
+   */
+  private _stopIdleCheck(): void {
+    if (this._idleCheckTimer) {
+      clearInterval(this._idleCheckTimer)
+      this._idleCheckTimer = null
     }
   }
 

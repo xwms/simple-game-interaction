@@ -47,6 +47,11 @@ const DEFAULT_MANAGER_CONFIG: TunnelManagerConfig = {
   connectTimeout: 30000
 }
 
+/** KCP 重连最大尝试次数 */
+const KCP_RECONNECT_MAX_RETRIES = 3
+/** KCP 重连基础延迟（毫秒，指数退避） */
+const KCP_RECONNECT_BASE_DELAY = 2000
+
 /** 状态报告 */
 export interface TunnelStatusReport {
   state: TunnelManagerState
@@ -76,6 +81,8 @@ export interface TunnelStatusReport {
  */
 export class TunnelManager extends EventEmitter {
   private _relayClient: RelayClient
+  /** KCP 重连尝试次数（加入者侧） */
+  private _kcpReconnectAttempts: number = 0
   private _guestTransports: Map<string, Transport> = new Map()
   private _guestClients: Map<string, LocalTunnelClient> = new Map()
   /** P2P 备选传输（IPv6 最优时额外创建的被动监听，用于降级切换） */
@@ -467,6 +474,7 @@ export class TunnelManager extends EventEmitter {
     this._hostNetwork = null
     this._guestNetwork = null
     this._guestPeerInfo = null
+    this._kcpReconnectAttempts = 0
     this._setState('idle')
     this.emit('disconnected')
     logger.info('已离开房间')
@@ -906,7 +914,13 @@ export class TunnelManager extends EventEmitter {
   }
 
   /**
-   * 功能描述：创建并连接 Transport（P2P 路径尝试 TCP → UDP 子策略）
+   * 功能描述：创建并连接 Transport（P2P 路径并行尝试 TCP/UDP，非 P2P 直接创建）
+   *
+   * 逻辑说明：
+   *   - 非 P2P 路径（IPv6/Relay）：直接创建对应 Transport 并连接
+   *   - P2P 路径且仅单方法：顺序连接
+   *   - P2P 路径且多方法：并行同时尝试 TCP 和 UDP，取最快建立的连接
+   *   - KCP 连接成功后（加入者侧）：自动创建中继备用传输，主传输断开时无缝切换
    *
    * @returns 已连接的 Transport 实例
    */
@@ -920,54 +934,243 @@ export class TunnelManager extends EventEmitter {
       return transport
     }
 
-    // P2P：按优先级依次尝试 TCP → UDP
+    // P2P：按优先级尝试 TCP / UDP
     const methods = this._currentPath.p2pStrategy?.methods || ['tcp', 'udp']
     let lastError: Error | null = null
 
+    if (methods.length === 1) {
+      // 单方法：顺序尝试
+      return await this._trySingleP2pMethod(methods[0]!)
+    }
+
+    // 多方法：并行竞争，取最快建立的连接
+    const pending: Array<{
+      method: string
+      transport: Transport
+      promise: Promise<Transport>
+    }> = []
+
     for (const method of methods) {
-      try {
-        if (method === 'tcp') {
-          const p2p = new P2pTransport()
-          p2p.setRole(this._role === 'host' ? 'passive' : 'active')
-          await p2p.connect(this._guestPeerInfo || { peerId: '' })
-          return p2p
-        } else {
-          const kcp = new KcpTransport()
-          kcp.setRole(this._role === 'host' ? 'passive' : 'active')
-          // Guest 侧：KCP 绑定后立即发送 kcp-port（本地端口），
-          // 房主尽早开始探测建立 NAT 映射；STUN 公网地址发现后更新
-          if (this._role === 'guest' && this._hostMemberId) {
-            kcp.on('bound', (localPort: number) => {
-              const publicIp = this._guestNetwork?.ipv4.publicIp || ''
-              this._relayClient.sendSignal(this._hostMemberId, {
-                type: 'kcp-port',
-                kcpPort: localPort,
-                publicIp
-              }).catch((err: Error) => {
-                logger.error(`发送 KCP 端口信号失败: ${err.message}`)
+      if (method === 'tcp') {
+        const p2p = new P2pTransport()
+        p2p.setRole(this._role === 'host' ? 'passive' : 'active')
+        pending.push({
+          method,
+          transport: p2p,
+          promise: p2p.connect(this._guestPeerInfo || { peerId: '' }).then(() => p2p)
+        })
+      } else {
+        const kcp = this._createKcpWithSignals()
+        pending.push({
+          method,
+          transport: kcp,
+          promise: kcp.connect(this._guestPeerInfo || { peerId: '' }).then(() => {
+            // KCP 成功 → 创建中继备用
+            if (this._role === 'guest') {
+              this._addGuestRelayFallback(kcp).catch((err: Error) => {
+                logger.warn(`创建中继备用失败: ${err.message}`)
               })
-            })
-            kcp.on('public-addr', (pubPort: number, pubIp: string | null) => {
-              const publicIp = pubIp || this._guestNetwork?.ipv4.publicIp || ''
-              this._relayClient.sendSignal(this._hostMemberId, {
-                type: 'kcp-port',
-                kcpPort: pubPort,
-                publicIp
-              }).catch((err: Error) => {
-                logger.error(`发送 KCP 端口更新信号失败: ${err.message}`)
-              })
-            })
-          }
-          await kcp.connect(this._guestPeerInfo || { peerId: '' })
-          return kcp
-        }
-      } catch (err) {
-        lastError = err as Error
-        logger.warn(`${method === 'tcp' ? 'TCP P2P' : 'KCP UDP'} 连接失败: ${(err as Error).message}`)
+            }
+            return kcp
+          })
+        })
       }
     }
 
-    throw lastError || new Error('P2P 连接失败')
+    try {
+      const winner = await Promise.race(pending.map(p => p.promise))
+
+      // 清理较慢的传输
+      for (const p of pending) {
+        if (p.transport !== winner) {
+          p.transport.disconnect().catch(() => {})
+          p.promise.catch(() => {}) // 吞掉被断开的 connect 异常
+        }
+      }
+
+      logger.info(`P2P 并行竞争: ${pending.filter(p => p.transport === winner)[0]?.method || 'unknown'} 胜出`)
+      return winner
+    } catch (err) {
+      // 所有方法均失败：确保所有 transport 已清理
+      for (const p of pending) {
+        if (p.transport.status !== 'disconnected') {
+          p.transport.disconnect().catch(() => {})
+        }
+        p.promise.catch(() => {})
+      }
+      lastError = err as Error
+      throw lastError || new Error('P2P 连接失败')
+    }
+  }
+
+  /**
+   * 功能描述：尝试单一 P2P 连接方法
+   *
+   * @param method - 'tcp' 或 'udp'
+   * @returns 已连接的 Transport
+   */
+  private async _trySingleP2pMethod(method: string): Promise<Transport> {
+    if (method === 'tcp') {
+      const p2p = new P2pTransport()
+      p2p.setRole(this._role === 'host' ? 'passive' : 'active')
+      await p2p.connect(this._guestPeerInfo || { peerId: '' })
+      return p2p
+    }
+
+    const kcp = this._createKcpWithSignals()
+    await kcp.connect(this._guestPeerInfo || { peerId: '' })
+
+    // KCP 成功 → 创建中继备用（加入者侧）
+    if (this._role === 'guest') {
+      this._addGuestRelayFallback(kcp).catch((err: Error) => {
+        logger.warn(`创建中继备用失败: ${err.message}`)
+      })
+    }
+
+    return kcp
+  }
+
+  /**
+   * 功能描述：创建 KCP 传输并注册信号处理器
+   *
+   * 逻辑说明：提取 KCP 实例创建和 bound/public-addr 信号注册的公共逻辑，
+   *           供 _createAndConnect 和 _tryKcpReconnect 复用。
+   *
+   * @returns 配置好的 KcpTransport 实例（尚未 connect）
+   */
+  private _createKcpWithSignals(): KcpTransport {
+    const kcp = new KcpTransport()
+    kcp.setRole(this._role === 'host' ? 'passive' : 'active')
+
+    if (this._role === 'guest' && this._hostMemberId) {
+      // Guest 侧：绑定后立即发送 kcp-port（本地端口），
+      // 房主尽早开始探测建立 NAT 映射；STUN 公网地址发现后更新
+      kcp.on('bound', (localPort: number) => {
+        const publicIp = this._guestNetwork?.ipv4.publicIp || ''
+        this._relayClient.sendSignal(this._hostMemberId, {
+          type: 'kcp-port',
+          kcpPort: localPort,
+          publicIp
+        }).catch((err: Error) => {
+          logger.error(`发送 KCP 端口信号失败: ${err.message}`)
+        })
+      })
+      kcp.on('public-addr', (pubPort: number, pubIp: string | null) => {
+        const publicIp = pubIp || this._guestNetwork?.ipv4.publicIp || ''
+        this._relayClient.sendSignal(this._hostMemberId, {
+          type: 'kcp-port',
+          kcpPort: pubPort,
+          publicIp
+        }).catch((err: Error) => {
+          logger.error(`发送 KCP 端口更新信号失败: ${err.message}`)
+        })
+      })
+    }
+
+    return kcp
+  }
+
+  /**
+   * 功能描述：创建加入者侧中继备用传输
+   *
+   * 逻辑说明：KCP 连接建立后额外创建一个 RelayPeerTransport 作为备用。
+   *           当 KCP 断开且中继有数据到达时自动切换，实现无缝降级。
+   *           不阻塞主流程（fire-and-forget）。
+   *
+   * @param primaryTransport - 主传输（KCP）
+   */
+  private async _addGuestRelayFallback(primaryTransport: Transport): Promise<void> {
+    if (!this._hostMemberId) return
+
+    const relayFallback = new RelayPeerTransport(this._relayClient, undefined, this._hostMemberId)
+    await relayFallback.connect({ peerId: this._hostMemberId })
+
+    const onRelayData = (data: Buffer): void => {
+      // 已切换到中继，跳过
+      if (this._currentTransport === relayFallback) return
+
+      // 主传输仍连接，忽略中继数据
+      if (primaryTransport.status === 'connected') return
+
+      logger.info('加入者切换到中继传输 (KCP 断开)')
+      relayFallback.removeListener(TRANSPORT_EVENTS.DATA, onRelayData)
+
+      const oldTransport = this._currentTransport
+      this._currentTransport = relayFallback
+      this._localServer.setTransport(relayFallback)
+      this._setupTransportEvents(relayFallback)
+
+      if (oldTransport && oldTransport !== relayFallback) {
+        oldTransport.disconnect().catch(() => {})
+      }
+      this.emit('transport-changed', 'relay')
+
+      // 重新发射本次数据
+      relayFallback.emit(TRANSPORT_EVENTS.DATA, data)
+    }
+
+    relayFallback.on(TRANSPORT_EVENTS.DATA, onRelayData)
+    logger.debug('中继备用传输已建立')
+  }
+
+  /**
+   * 功能描述：KCP 传输重连（加入者侧）
+   *
+   * 逻辑说明：KCP 空闲超时或传输错误时尝试重建连接。
+   *           指数退避：2s → 4s → 8s，最多 3 次。
+   *           成功后重新绑定到 LocalServer，重设传输事件。
+   *           超过重试次数后降级到下一路径。
+   *
+   * @throws 所有重试均失败时抛出错误
+   */
+  private async _tryKcpReconnect(): Promise<void> {
+    if (this._kcpReconnectAttempts >= KCP_RECONNECT_MAX_RETRIES) {
+      logger.warn('KCP 重连已达最大次数, 切换到 degrade')
+      this._kcpReconnectAttempts = 0
+      this._degrade().catch((err) => {
+        this.emit('error', err)
+      })
+      return
+    }
+
+    const delay = KCP_RECONNECT_BASE_DELAY * Math.pow(2, this._kcpReconnectAttempts)
+    this._kcpReconnectAttempts++
+    logger.info(`KCP 重连第 ${this._kcpReconnectAttempts} 次 (等待 ${delay}ms)`)
+
+    await new Promise(resolve => setTimeout(resolve, delay))
+
+    try {
+      const oldTransport = this._currentTransport
+
+      const kcp = this._createKcpWithSignals()
+      await kcp.connect(this._guestPeerInfo || { peerId: '' })
+
+      // 切换传输
+      this._currentTransport = kcp
+      this._localServer.setTransport(kcp)
+
+      // 断开旧传输
+      if (oldTransport) {
+        try { await oldTransport.disconnect() } catch { /* 忽略 */ }
+      }
+
+      // 回放缓冲数据
+      const drained = kcp.drainPendingData((data: Buffer) => {
+        kcp.emit(TRANSPORT_EVENTS.DATA, data)
+      })
+      if (drained > 0) {
+        logger.debug(`KCP 重连: 回放 ${drained} 条缓冲数据到 LocalServer`)
+      }
+
+      this._setupTransportEvents(kcp)
+      this._kcpReconnectAttempts = 0
+      logger.info('KCP 重连成功')
+      this.emit('transport-changed', 'p2p')
+    } catch (err) {
+      logger.warn(`KCP 重连失败: ${(err as Error).message}`)
+      // 递归重试
+      await this._tryKcpReconnect()
+    }
   }
 
   /**
@@ -1068,7 +1271,18 @@ export class TunnelManager extends EventEmitter {
           logger.warn(`房主传输错误, 等待加入者重新连接`)
           return
         }
+        // KCP 传输错误时尝试重连，而非直接降级
+        if (transport instanceof KcpTransport && this._role === 'guest') {
+          this._tryKcpReconnect().catch((err) => {
+            logger.error(`KCP 重连失败: ${(err as Error).message}`)
+          })
+          return
+        }
         logger.warn(`Transport 异常: ${s}`)
+        if (transport instanceof KcpTransport) {
+          logger.info('KCP 传输断开, 跳过 degrade (房主/单路径场景)')
+          return
+        }
         this._degrade().catch((err) => {
           this.emit('error', err)
         })
