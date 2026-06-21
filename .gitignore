@@ -36,5 +36,9 @@ CLAUDE.md
 .claude
 
 # Electron dev cache
+electron-dev1/
 electron-dev2/
 %USERPROFILE%/electron-dev2/
+
+# Resources (icons, fonts — local build assets)
+resources/
