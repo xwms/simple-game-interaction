@@ -71,6 +71,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev fakeroot rpm squashfs-tools libarchive-tools
 
+      - name: Cleanup stray DMG mounts (macOS)
+        if: matrix.os == 'macos-latest'
+        continue-on-error: true
+        run: hdiutil info | grep "/dev/disk" | grep -v "internally" | awk '{print $1}' | xargs -I{} hdiutil detach {} -quiet 2>/dev/null || true
+
       - name: Build package (${{ matrix.os }})
         run: npm run ${{ matrix.script }} -- --publish=never
 
@@ -81,7 +86,7 @@ jobs:
 
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
