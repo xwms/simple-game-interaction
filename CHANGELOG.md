@@ -1,5 +1,17 @@
 # 更新日志
 
+## [0.0.4] — 2026-06-22
+
+### 新增
+- GitHub Actions 跨平台 CI（三平台测试 + 构建）
+- 自动发布到 GitHub Releases（打 tag 触发）
+- 全平台安装包：Windows (.exe) / macOS (.dmg) / Linux (.AppImage + .deb)
+
+### 修复
+- local-server 测试跨平台竞态问题（改用 polling 等待）
+- Linux .deb 构建缺少 author email
+- Node.js 20 GitHub Actions 弃用警告
+
 ## [1.1.2] — 2026-06-07
 
 ### 修复
