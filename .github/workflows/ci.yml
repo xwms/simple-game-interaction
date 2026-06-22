@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -35,7 +36,7 @@ jobs:
           CI: true
 
   build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: [test]
     strategy:
       fail-fast: false
@@ -77,3 +78,28 @@ jobs:
         with:
           name: package-${{ matrix.os }}
           path: release/${{ matrix.artifact }}
+
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate release notes
+        run: |
+          echo "# 更新日志" > release-body.md
+          echo "" >> release-body.md
+          sed -n '/^## /,/^## /p' CHANGELOG.md | head -n -2 >> release-body.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-body.md
+          files: artifacts/package-*/*
