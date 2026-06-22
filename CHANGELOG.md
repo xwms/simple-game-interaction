@@ -9,6 +9,7 @@
 
 ### 修复
 - local-server 测试跨平台竞态问题（改用 polling 等待）
+- macOS CI 测试未捕获的 ECONNRESET 导致构建失败
 - Linux .deb 构建缺少 author email
 - Node.js 20 GitHub Actions 弃用警告
 

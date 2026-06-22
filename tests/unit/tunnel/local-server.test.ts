@@ -131,6 +131,9 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
     const client = net.createConnection({ host: '127.0.0.1', port: localPort })
     await new Promise<void>((resolve) => client.on('connect', () => resolve()))
 
+    // server.stop() 会销毁服务端 socket，客户端可能收到 ECONNRESET
+    client.on('error', () => {})
+
     const closePromise = new Promise<void>((resolve) => {
       client.on('close', () => resolve())
     })
