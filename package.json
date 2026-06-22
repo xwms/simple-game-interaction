@@ -19,7 +19,7 @@
     "type-check": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/build-main.js && playwright test --config=tests/e2e/playwright.config.ts",
     "pack": "node scripts/build-main.js && vite build && electron-builder --dir",
     "dist": "node scripts/build-main.js && vite build && electron-builder",
     "dist:win": "node scripts/build-main.js && vite build && electron-builder --win",

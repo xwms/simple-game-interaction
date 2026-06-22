@@ -88,7 +88,10 @@ function createWindow() {
   if (isDev) {
     const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
     mainWindow.loadURL(devUrl)
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    // 在测试环境下不打开 DevTools，避免干扰 E2E 测试
+    if (process.env.NODE_ENV !== 'test') {
+      mainWindow.webContents.openDevTools({ mode: 'detach' })
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/renderer/index.html'))
   }
