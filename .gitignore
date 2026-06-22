@@ -26,6 +26,7 @@ logs/
 
 # Test
 coverage/
+test-results/
 
 # Auto-generated
 src/auto-imports.d.ts
