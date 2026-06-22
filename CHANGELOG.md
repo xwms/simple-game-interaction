@@ -18,7 +18,7 @@
 - E2E 测试缺少 Vite dev server 自动启动导致页面无法加载
 
 ### 变更
-- macOS arm64 构建恢复：使用 macos-latest (ARM64 runner) 构建 arm64 DMG，macos-13 (x64) 构建 x64 DMG
+- macOS arm64 构建恢复：在 macos-latest (ARM64 runner) 上同时构建 x64 + arm64 双架构 DMG
 - artifactName 加入 ${arch} 区分 macOS 架构
 
 ## [1.1.2] — 2026-06-07
