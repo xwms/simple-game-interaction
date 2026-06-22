@@ -38,7 +38,6 @@ mac:
     - target: dmg
       arch:
         - x64
-        - arm64
   icon: resources/icons/icon.icns
   artifactName: ${productName}-${version}-mac.${ext}
   category: public.app-category.utilities

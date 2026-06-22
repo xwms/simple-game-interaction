@@ -10,8 +10,10 @@
 ### 修复
 - local-server 测试跨平台竞态问题（改用 polling 等待）
 - macOS CI 测试未捕获的 ECONNRESET 导致构建失败
+- macOS DMG 构建 — arm64 在 x64 runner 下 hdiutil 不稳定，暂移除 arm64 目标
 - Linux .deb 构建缺少 author email
 - Node.js 20 GitHub Actions 弃用警告
+- create-release 与 build 并行导致 Release 无安装包
 
 ## [1.1.2] — 2026-06-07
 
