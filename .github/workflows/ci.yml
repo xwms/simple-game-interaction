@@ -45,9 +45,14 @@ jobs:
           - os: ubuntu-latest
             script: dist:linux
             artifact: SGI-*-linux.*
+          - os: macos-13
+            script: dist:mac
+            artifact: SGI-*-mac-x64.*
+            extra_args: --x64
           - os: macos-latest
             script: dist:mac
-            artifact: SGI-*-mac.*
+            artifact: SGI-*-mac-arm64.*
+            extra_args: --arm64
           - os: windows-latest
             script: dist:win
             artifact: SGI-Setup-*-win.exe
@@ -72,12 +77,12 @@ jobs:
           sudo apt-get install -y dpkg-dev fakeroot rpm squashfs-tools libarchive-tools
 
       - name: Cleanup stray DMG mounts (macOS)
-        if: matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'macos-')
         continue-on-error: true
         run: hdiutil info | grep "/dev/disk" | grep -v "internally" | awk '{print $1}' | xargs -I{} hdiutil detach {} -quiet 2>/dev/null || true
 
       - name: Build package (${{ matrix.os }})
-        run: npm run ${{ matrix.script }} -- --publish=never
+        run: npm run ${{ matrix.script }} -- --publish=never ${{ matrix.extra_args }}
 
       - uses: actions/upload-artifact@v4.6.2
         with:

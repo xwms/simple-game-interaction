@@ -27,10 +27,9 @@
 | 平台 | 安装包 |
 |------|--------|
 | Windows | `SGI-Setup-0.0.5-win.exe` |
-| macOS Intel | `SGI-0.0.5-mac.dmg` |
+| macOS Intel | `SGI-0.0.5-mac-x64.dmg` |
+| macOS Apple Silicon | `SGI-0.0.5-mac-arm64.dmg` |
 | Linux | `SGI-0.0.5-linux.AppImage` / `.deb` |
-
-> macOS Apple Silicon 暂需本地构建或通过 Rosetta 2 运行 x64 版本。
 
 ### 从源码运行
 

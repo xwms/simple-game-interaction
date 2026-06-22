@@ -38,8 +38,9 @@ mac:
     - target: dmg
       arch:
         - x64
+        - arm64
   icon: resources/icons/icon.icns
-  artifactName: ${productName}-${version}-mac.${ext}
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
   category: public.app-category.utilities
   # 代码签名（需加入 Apple Developer Program）
   # identity: ${MAC_DEV_IDENTITY}
