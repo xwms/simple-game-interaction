@@ -79,9 +79,6 @@ jobs:
       - name: Build package (${{ matrix.os }})
         run: npm run ${{ matrix.script }} -- --publish=never
 
-      - name: List release artifacts
-        run: ls -la release/
-
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: package-${{ matrix.os }}
@@ -100,9 +97,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: List artifacts
-        run: find artifacts -type f -ls
 
       - name: Generate release notes
         run: |
