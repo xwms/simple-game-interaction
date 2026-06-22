@@ -2,6 +2,8 @@ appId: com.sgi.app
 productName: SGI
 copyright: Copyright © 2026
 
+compression: maximum
+
 directories:
   output: release
   buildResources: resources
