@@ -13,6 +13,7 @@ files:
   - dist/renderer/**/*
   - resources/icons/**/*
   - package.json
+  - '!**/*.map'
 
 win:
   target:
