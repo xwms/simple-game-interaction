@@ -5,15 +5,21 @@
 ### 新增
 - GitHub Actions 跨平台 CI（三平台测试 + 构建）
 - 自动发布到 GitHub Releases（打 tag 触发）
-- 全平台安装包：Windows (.exe) / macOS (.dmg) / Linux (.AppImage + .deb)
+- 全平台安装包：Windows (.exe) / macOS Intel (.dmg) + Apple Silicon (.dmg) / Linux (.AppImage + .deb)
+- E2E 测试覆盖扩展至 19 个用例（首页/导航/设置/404/路由守卫）
 
 ### 修复
 - local-server 测试跨平台竞态问题（改用 polling 等待）
 - macOS CI 测试未捕获的 ECONNRESET 导致构建失败
-- macOS DMG 构建 — arm64 在 x64 runner 下 hdiutil 不稳定，暂移除 arm64 目标
-- Linux .deb 构建缺少 author email
+- Windows 开发环境端口 5173 残留进程自动清理
 - Node.js 20 GitHub Actions 弃用警告
 - create-release 与 build 并行导致 Release 无安装包
+- E2E 测试 DevTools 窗口竞争导致 firstWindow() 返回错误窗口
+- E2E 测试缺少 Vite dev server 自动启动导致页面无法加载
+
+### 变更
+- macOS arm64 构建恢复：使用 macos-latest (ARM64 runner) 构建 arm64 DMG，macos-13 (x64) 构建 x64 DMG
+- artifactName 加入 ${arch} 区分 macOS 架构
 
 ## [1.1.2] — 2026-06-07
 
