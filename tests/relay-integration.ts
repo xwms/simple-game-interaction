@@ -2,8 +2,8 @@
  * 功能描述：中继服务器端到端集成测试
  *
  * 逻辑说明：覆盖完整协议流程 — 房间管理、信令转发、二进制数据中继、心跳、健康检查。
- *           用法：npx tsx tests/relay-integration.test.ts
- *           远程测试：RELAY_URL=ws://服务器IP:9800 npx tsx tests/relay-integration.test.ts
+ *           用法：npx tsx tests/relay-integration.ts
+ *           远程测试：RELAY_URL=ws://服务器IP:9800 npx tsx tests/relay-integration.ts
  */
 
 import WebSocket from 'ws'
