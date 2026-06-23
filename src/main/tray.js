@@ -10,7 +10,7 @@
 
 'use strict'
 
-const { Tray, BrowserWindow, ipcMain, app, nativeTheme } = require('electron')
+const { Tray, Menu, BrowserWindow, ipcMain, app, nativeTheme } = require('electron')
 const path = require('path')
 
 /** @type {Tray|null} */
@@ -138,6 +138,7 @@ function _registerIpcHandler() {
  *
  * 逻辑说明：根据平台选择图标格式（macOS: 16x16@2x, Windows: .ico, Linux: .png）。
  *           左键点击显示主窗口，右键点击弹出菜单。
+ *           Linux 下右键使用原生 Menu.popup（自定义 BrowserWindow 菜单在 GNOME 上不可靠）。
  *
  * @param {Function} showWindowFn - 显示主窗口的回调
  */
@@ -158,14 +159,36 @@ function createTray(showWindowFn) {
 
   _registerIpcHandler()
 
-  // 右键点击弹出菜单
-  tray.on('right-click', () => {
-    if (menuWindow && !menuWindow.isDestroyed()) {
-      closeMenu()
-    } else {
-      createTrayMenu()
-    }
-  })
+  if (process.platform === 'linux') {
+    // Linux: 使用原生菜单（兼容 GNOME/KDE）
+    const contextMenu = Menu.buildFromTemplate([
+      { label: '显示窗口', click: () => { if (_showWindowFn) _showWindowFn() } },
+      { type: 'separator' },
+      {
+        label: '断开连接',
+        click: () => {
+          if (_showWindowFn) _showWindowFn()
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed()) {
+              win.webContents.send('app:confirm-disconnect')
+            }
+          })
+        }
+      },
+      { type: 'separator' },
+      { label: '退出', click: () => app.quit() }
+    ])
+    tray.setContextMenu(contextMenu)
+  } else {
+    // Windows/macOS: 使用自定义 BrowserWindow 菜单
+    tray.on('right-click', () => {
+      if (menuWindow && !menuWindow.isDestroyed()) {
+        closeMenu()
+      } else {
+        createTrayMenu()
+      }
+    })
+  }
 
   return tray
 }

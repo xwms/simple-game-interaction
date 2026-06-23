@@ -53,14 +53,26 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * 功能描述：扫描本机游戏
+ *
+ * 逻辑说明：保留手动添加的游戏（gameId 以 manual- 开头），
+ *           仅替换自动检测的结果列表。手动条目可被后端检测更新。
  */
 async function scanGames(): Promise<void> {
   try {
     const res = await window.electronAPI.invoke('game:detect-local')
     if (res.success) {
       const all = (res.data as any[]) || []
-      games.value = all.filter((g: any) => g.running && g.portOpen)
-      games.value.sort((a: any, b: any) => (b.running ? 1 : 0) - (a.running ? 1 : 0))
+      const autoGames = all.filter((g: any) => g.running && g.portOpen)
+
+      // 合并手动添加的游戏（不随自动扫描消失）
+      const merged = [...games.value.filter((g: any) => g.gameId.startsWith('manual-'))]
+      for (const auto of autoGames) {
+        if (!merged.some((m) => m.gameId === auto.gameId)) {
+          merged.push(auto)
+        }
+      }
+      merged.sort((a: any, b: any) => (b.running ? 1 : 0) - (a.running ? 1 : 0))
+      games.value = merged
     }
   } finally {
     isScanning.value = false

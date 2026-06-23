@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  relay-server:
+    build:
+      context: ../..
+      dockerfile: src/relay-server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "9800:9800"
+      - "9801:9801"
+    environment:
+      - RELAY_HOST=0.0.0.0
+      - RELAY_PORT=9800
+      - RELAY_ADMIN_HOST=0.0.0.0
+      - RELAY_ADMIN_PORT=9801
+      - RELAY_MAX_ROOMS=1000
+      - RELAY_MAX_MEMBERS=8
+      - RELAY_MAX_CLIENTS=5000
+      - RELAY_MAX_PER_IP=10
+      - RELAY_MSG_RATE=100
+      - RELAY_LOG_LEVEL=info
+      - NODE_ENV=production
+    # Uncomment for TLS:
+    #   - RELAY_TLS_CERT=/certs/fullchain.pem
+    #   - RELAY_TLS_KEY=/certs/privkey.pem
+    # volumes:
+    #   - /etc/letsencrypt:/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9801/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

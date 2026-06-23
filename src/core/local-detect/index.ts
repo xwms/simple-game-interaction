@@ -16,9 +16,10 @@ export { processScanner, portChecker }
 /**
  * 功能描述：检测本机运行的所有已知游戏
  *
- * 逻辑说明：遍历游戏数据库，检查每个游戏的进程是否运行。
- *           如果进程运行，自动查找该进程实际监听的端口。
- *           仅当进程运行且实际端口开放时才标记为检测到。
+ * 逻辑说明：遍历游戏数据库，检查每个游戏关联的进程名是否运行。
+ *           当匹配到进程时遍历所有匹配项，找到第一个实际有监听端口的进程（规避启动器
+ *           等非服务端进程的干扰）。仅当进程运行且实际端口开放时才标记为检测到。
+ *           不扫描固定端口——端口信息完全来自进程的实际监听状态。
  *
  * @returns 检测结果列表
  */
@@ -35,28 +36,28 @@ async function detectLocalGames(): Promise<GameDetectResult[]> {
     const allMatches = processResults.flat()
 
     const running = allMatches.length > 0
-    const pid = allMatches[0]?.pid
-    const processName = allMatches[0]?.name
-
+    let pid: number | undefined
+    let processName: string | undefined
     let detectedPort = game.defaultPort
     let portOpen = false
 
-    if (pid !== undefined) {
-      // 通过 PID 查找进程实际监听的端口（最准确）
-      const actualPorts = await portChecker.findPortsByPid(pid)
+    // 遍历所有匹配的进程，取第一个实际在监听端口的
+    // 避免 HMCL（Java 启动器）等非服务端进程的干扰
+    for (const match of allMatches) {
+      const actualPorts = await portChecker.findPortsByPid(match.pid)
       if (actualPorts.length > 0) {
+        pid = match.pid
+        processName = match.name
         detectedPort = actualPorts[0]
         portOpen = true
+        break
       }
-    } else {
-      // 没有找到进程，回退到默认端口检测（可能是无头服务器）
-      const portsToCheck = [game.defaultPort, ...(game.altPorts || [])]
-      const portResults = await portChecker.checkPorts(portsToCheck, game.protocol)
-      const openPort = portResults.find((p) => p.inUse)
-      if (openPort) {
-        detectedPort = openPort.port
-        portOpen = true
-      }
+    }
+
+    // 都没监听端口时仍记录首个匹配的进程（供 UI 显示）
+    if (!portOpen && allMatches.length > 0) {
+      pid = allMatches[0].pid
+      processName = allMatches[0].name
     }
 
     return {
@@ -97,28 +98,25 @@ async function detectGame(gameId: string): Promise<GameDetectResult | null> {
   const allMatches = processResults.flat()
 
   const running = allMatches.length > 0
-  const pid = allMatches[0]?.pid
-  const processName = allMatches[0]?.name
-
+  let pid: number | undefined
+  let processName: string | undefined
   let detectedPort = game.defaultPort
   let portOpen = false
 
-  if (pid !== undefined) {
-    const actualPorts = await portChecker.findPortsByPid(pid)
+  for (const match of allMatches) {
+    const actualPorts = await portChecker.findPortsByPid(match.pid)
     if (actualPorts.length > 0) {
+      pid = match.pid
+      processName = match.name
       detectedPort = actualPorts[0]
       portOpen = true
+      break
     }
   }
 
-  if (!portOpen) {
-    const portsToCheck = [game.defaultPort, ...(game.altPorts || [])]
-    const portResults = await portChecker.checkPorts(portsToCheck, game.protocol)
-    const openPort = portResults.find((p) => p.inUse)
-    if (openPort) {
-      detectedPort = openPort.port
-      portOpen = true
-    }
+  if (!portOpen && allMatches.length > 0) {
+    pid = allMatches[0].pid
+    processName = allMatches[0].name
   }
 
   return {

@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "dev:vite": "vite",
-    "relay": "tsx src/relay-server/index.ts",
+    "relay": "tsx src/relay-server/main.ts",
+    "relay:build": "tsc --project tsconfig.relay-server.json",
+    "relay:prod": "node dist/relay-server/main.js",
     "build:main": "node scripts/build-main.js",
     "build:renderer": "vite build",
     "build": "node scripts/build-main.js && vite build",

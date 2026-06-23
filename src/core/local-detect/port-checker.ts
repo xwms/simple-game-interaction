@@ -112,20 +112,40 @@ async function _findProcessByPort(
         }
       }
     } else {
-      const { stdout } = await execAsync(
-        `lsof -i ${protocol}:${port} -P -n 2>/dev/null`,
-        { timeout: 3000 }
-      )
+      // Linux/macOS 优先使用 lsof，失败时回退到 ss（Ubuntu 默认无 lsof）
+      let stdout = ''
+      try {
+        const result = await execAsync(
+          `lsof -i ${protocol}:${port} -P -n 2>/dev/null`,
+          { timeout: 3000 }
+        )
+        stdout = result.stdout
+      } catch {
+        try {
+          const result = await execAsync(
+            `ss -tlnp sport = :${port} 2>/dev/null`,
+            { timeout: 3000 }
+          )
+          stdout = result.stdout
+        } catch {
+          return null
+        }
+      }
 
       for (const line of stdout.split('\n')) {
-        // 跳过标题行
-        if (line.startsWith('COMMAND')) continue
+        if (line.startsWith('COMMAND') || line.startsWith('State')) continue
         const parts = line.trim().split(/\s+/)
         if (parts.length >= 2) {
+          // lsof: COMMAND PID ...
           const name = parts[0]
           const pid = parseInt(parts[1], 10)
           if (!isNaN(pid)) {
             return { pid, name }
+          }
+          // ss: 最后列包含 "users:(("进程名",pid=1234,...))"
+          const userMatch = line.match(/users:\(\(([^,]+),pid=(\d+)/)
+          if (userMatch) {
+            return { pid: parseInt(userMatch[2], 10), name: userMatch[1] }
           }
         }
       }
@@ -187,8 +207,8 @@ async function checkPorts(
  * 功能描述：通过 PID 查找进程占用的端口
  *
  * 逻辑说明：Windows 使用 netstat -ano | findstr PID，
- *           macOS/Linux 使用 lsof -i -P -n | grep PID。
- *           返回该进程监听的 TCP 端口列表。
+ *           macOS/Linux 优先使用 lsof -i，失败时回退到 ss -tulnp。
+ *           同时支持 TCP 和 UDP 端口检测。
  *
  * @param pid - 进程 ID
  * @returns 端口列表
@@ -197,8 +217,8 @@ async function findPortsByPid(pid: number): Promise<number[]> {
   const platform = getPlatform()
   const ports: number[] = []
 
-  try {
-    if (platform === 'win') {
+  if (platform === 'win') {
+    try {
       const { stdout } = await execAsync(
         `netstat -ano | findstr "${pid}"`,
         { timeout: 3000 }
@@ -208,29 +228,58 @@ async function findPortsByPid(pid: number): Promise<number[]> {
         // netstat -ano 输出格式:
         //   TCP    0.0.0.0:25565           0.0.0.0:0              LISTENING       12345
         //   TCP    [::]:25565              [::]:0                 LISTENING       12345
-        // 只匹配 LISTENING 状态的 TCP 连接，取本地地址的端口号
+        //   UDP    0.0.0.0:34197           *:*                                    12345
         const match = line.trim().match(/TCP\s+\S+:(\d+)\s+\S+:\d+\s+LISTENING/i)
+        const udpMatch = !match && line.trim().match(/UDP\s+\S+:(\d+)\s+/i)
         if (match) {
           ports.push(parseInt(match[1], 10))
+        } else if (udpMatch) {
+          ports.push(parseInt(udpMatch[1], 10))
         }
       }
-    } else {
-      const { stdout } = await execAsync(
-        `lsof -i -P -n 2>/dev/null | grep "^.*\\s${pid}\\s"`,
+    } catch {
+      // 命令失败，返回空
+    }
+  } else {
+    // Linux/macOS 优先使用 lsof -i，失败时回退到 ss -tulnp
+    let stdout = ''
+    try {
+      const result = await execAsync(
+        `lsof -i -P -n 2>/dev/null | grep -E "^.*[[:space:]]+${pid}[[:space:]]+"`,
         { timeout: 3000 }
       )
+      stdout = result.stdout
+    } catch {
+      try {
+        // ss -tulnp 输出格式：
+        //   tcp   LISTEN  0  50  0.0.0.0:25565  0.0.0.0:*  users:(("java",pid=12345,fd=30))
+        //   udp   UNCONN  0   0  0.0.0.0:34197  0.0.0.0:*  users:(("factorio",pid=5678,fd=30))
+        const result = await execAsync(
+          `ss -tulnp 2>/dev/null | grep -E "pid=${pid}"`,
+          { timeout: 3000 }
+        )
+        stdout = result.stdout
+      } catch {
+        return []
+      }
+    }
 
-      for (const line of stdout.split('\n')) {
-        // 格式: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
-        // NAME 列: *:25565 (LISTEN)
-        const match = line.trim().match(/:(\d+)\s+\(LISTEN\)/i)
-        if (match) {
-          ports.push(parseInt(match[1], 10))
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+
+      // 统一提取端口号，兼容各种输出格式：
+      //   lsof: *:25565 (LISTEN)  或  *:34197（UDP 无 LISTEN 标记）
+      //   ss:   0.0.0.0:25565     或  [::]:25565
+      // 用 `:数字` + 空白/行尾 来定位端口号，避免误匹配 pid=12345 等字段
+      const portMatch = trimmed.match(/:(\d+)(?=\s|$)/)
+      if (portMatch) {
+        const port = parseInt(portMatch[1], 10)
+        if (port > 0 && port <= 65535) {
+          ports.push(port)
         }
       }
     }
-  } catch {
-    // 命令失败
   }
 
   return [...new Set(ports)]

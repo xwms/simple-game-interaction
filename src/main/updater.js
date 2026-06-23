@@ -31,13 +31,16 @@ const defaultConfig = {
 /**
  * 功能描述：返回当前平台的安装包扩展名
  *
- * @returns {string} 扩展名（.exe / .dmg / .AppImage）
+ * 逻辑说明：Linux 根据安装方式选择：AppImage 环境变量存在时用 .AppImage，
+ *           否则使用 .deb（dpkg/apt 安装）。
+ *
+ * @returns {string} 扩展名（.exe / .dmg / .AppImage / .deb）
  */
 function getPlatformAssetSuffix() {
   switch (process.platform) {
     case 'win32': return '.exe'
     case 'darwin': return '.dmg'
-    case 'linux': return '.AppImage'
+    case 'linux': return process.env.APPIMAGE ? '.AppImage' : '.deb'
     default: return '.exe'
   }
 }
@@ -479,10 +482,46 @@ async function installUpdate(filePath) {
   }
 
   if (ext === '.appimage') {
-    // Linux AppImage：加执行权限后运行
-    fs.chmodSync(filePath, 0o755)
-    spawn(filePath, ['--updated'], { detached: true, stdio: 'ignore' })
+    // Linux AppImage：替换旧文件后启动
+    // APPIMAGE 环境变量由 AppImage 运行时自动设置，指向原 .AppImage 文件路径
+    const currentAppImage = process.env.APPIMAGE
+    if (currentAppImage && currentAppImage !== filePath) {
+      try {
+        fs.copyFileSync(filePath, currentAppImage)
+        fs.chmodSync(currentAppImage, 0o755)
+        spawn(currentAppImage, ['--updated'], { detached: true, stdio: 'ignore' })
+        console.log(`[updater] 已替换 ${currentAppImage}，启动新版本...`)
+      } catch (err) {
+        console.error(`[updater] 替换旧文件失败，回退到直接启动: ${err.message}`)
+        fs.chmodSync(filePath, 0o755)
+        spawn(filePath, ['--updated'], { detached: true, stdio: 'ignore' })
+      }
+    } else {
+      fs.chmodSync(filePath, 0o755)
+      spawn(filePath, ['--updated'], { detached: true, stdio: 'ignore' })
+    }
     app.quit()
+    return
+  }
+
+  if (ext === '.deb') {
+    // Linux deb：使用 pkexec（PolicyKit GUI）提权安装
+    // 先检查 pkexec 是否可用，不可用时让用户手动安装
+    try {
+      fs.accessSync('/usr/bin/pkexec', fs.X_OK)
+    } catch {
+      console.log('[updater] pkexec 不可用，打开文件管理器让用户手动安装')
+      await shell.openPath(filePath)
+      app.quit()
+      return
+    }
+    console.log(`[updater] 启动 pkexec dpkg -i 安装 ${filePath}...`)
+    spawn('pkexec', ['dpkg', '-i', filePath], {
+      detached: true,
+      stdio: 'inherit'
+    })
+    // 给安装器一点时间启动，然后退出当前应用
+    setTimeout(() => app.quit(), 500)
     return
   }
 
