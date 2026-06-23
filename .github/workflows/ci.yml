@@ -108,3 +108,42 @@ jobs:
         with:
           body_path: release-body.md
           files: artifacts/package-*/*
+
+      - name: Sync release to Gitee
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME}"
+          echo "Syncing ${TAG} to Gitee..."
+
+          # 创建/更新 Gitee Release
+          RELEASE_BODY=$(cat release-body.md | jq -Rs .)
+          RESP=$(curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases" \
+            -H "Content-Type: application/json" \
+            -d "{\"access_token\":\"${GITEE_TOKEN}\",\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":${RELEASE_BODY},\"prerelease\":false}")
+          RELEASE_ID=$(echo "$RESP" | jq -r '.id // empty')
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Gitee release create response: $RESP"
+            # 可能已存在，尝试获取现有 release_id
+            RELEASE_ID=$(curl -s "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" | jq -r '.id // empty')
+          fi
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Failed to create/get Gitee release — skipping asset upload"
+            exit 0
+          fi
+
+          echo "Gitee release ID: ${RELEASE_ID}"
+
+          # 上传各个安装包
+          for file in artifacts/package-*/*; do
+            [ -f "$file" ] || continue
+            echo "Uploading $(basename "$file")..."
+            curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${RELEASE_ID}/attach_files" \
+              -F "access_token=${GITEE_TOKEN}" \
+              -F "file=@${file}" > /dev/null
+          done
+          echo "Gitee sync complete"
