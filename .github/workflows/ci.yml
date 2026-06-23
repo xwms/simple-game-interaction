@@ -122,6 +122,15 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           echo "Syncing ${TAG} to Gitee..."
 
+          # 获取当前 tag 的 commit SHA
+          SHA=$(git rev-parse "${TAG}")
+
+          # 通过 API 创建 tag ref（推送 tag 到 Gitee），已存在则忽略
+          echo "Creating tag ref on Gitee..."
+          curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/git/refs" \
+            -H "Content-Type: application/json" \
+            -d "{\"access_token\":\"${GITEE_TOKEN}\",\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${SHA}\"}" || true
+
           # 创建/更新 Gitee Release
           RELEASE_BODY=$(cat release-body.md | jq -Rs .)
           RESP=$(curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases" \

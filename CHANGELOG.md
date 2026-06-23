@@ -1,13 +1,18 @@
 # 更新日志
 
-## [0.0.8] — 2026-06-24
+## [0.0.9] — 2026-06-24
 
 ### 修复
 - ASAR 压缩等级从 maximum 改为 normal，修复 Linux 启动慢 30s+ 的问题
 
 ### CI
-- Gitee 同步前先推送 git tag，修复 Gitee Release 创建失败的问题
+- Gitee 同步改用 Git refs API 创建 tag，修复 Gitee Release 创建失败的问题
 - 验证 Gitee Releases 自动同步流程
+
+## [0.0.8] — 2026-06-24
+
+### CI
+- 验证 Gitee Releases 自动同步流程（测试版，未包含 tag 推送修复）
 
 ## [0.0.6] — 2026-06-23
 
