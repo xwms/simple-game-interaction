@@ -110,10 +110,14 @@ jobs:
           files: artifacts/package-*/*
 
       - name: Sync release to Gitee
-        if: ${{ secrets.GITEE_TOKEN != '' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "GITEE_TOKEN not configured, skipping Gitee sync"
+            exit 0
+          fi
+
           set -e
           TAG="${GITHUB_REF_NAME}"
           echo "Syncing ${TAG} to Gitee..."
