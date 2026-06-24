@@ -74,8 +74,6 @@ linux:
   artifactName: ${productName}-${version}-linux.${ext}
 
 publish:
-  - provider: generic
-    url: https://gitee.com/xwms/simple-game-interaction/releases/download
   - provider: github
     owner: xwms
     repo: simple-game-interaction
