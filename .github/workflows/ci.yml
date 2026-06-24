@@ -120,22 +120,13 @@ jobs:
 
           set -e
           TAG="${GITHUB_REF_NAME}"
-          echo "Syncing ${TAG} to Gitee..."
-
           SHA=$(git rev-parse "${TAG}")
+          echo "Syncing ${TAG} (${SHA}) to Gitee..."
 
-          # 先测试 token 是否有效
-          echo "Testing Gitee API token..."
-          curl -s "https://gitee.com/api/v5/user?access_token=${GITEE_TOKEN}" \
-            -w "\nHTTP %{http_code}\n" || true
-
-          # 创建 tag ref（忽略已存在错误）
-          echo "Creating tag ref on Gitee..."
-          curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/git/refs" \
-            -F "access_token=${GITEE_TOKEN}" \
-            -F "ref=refs/tags/${TAG}" \
-            -F "sha=${SHA}" \
-            -w "\nHTTP %{http_code}\n" || echo "Tag creation skipped"
+          # 推送 tag 到 Gitee（API 创建 Release 需要 tag 先行）
+          # 用户名固定为 oauth2，密码为 personal access token
+          echo "Pushing tag to Gitee..."
+          git push "https://oauth2:${GITEE_TOKEN}@gitee.com/xwms/simple-game-interaction.git" "${TAG}"
 
           # 创建 Release
           echo "Creating Gitee release..."
@@ -147,18 +138,11 @@ jobs:
             --data-urlencode "body=${RELEASE_BODY}" \
             --data-urlencode "target_commitish=${SHA}" \
             --data-urlencode "prerelease=false")
-          echo "Release response: $(echo $RESP | head -c 200)"
-          RELEASE_ID=$(echo "$RESP" | jq -r '.id // empty' 2>/dev/null || echo "")
+          RELEASE_ID=$(echo "$RESP" | jq -r '.id // empty')
 
           if [ -z "$RELEASE_ID" ]; then
-            echo "Gitee release create response: $RESP"
-            # 可能已存在，尝试获取现有 release_id
-            RELEASE_ID=$(curl -s "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" | jq -r '.id // empty')
-          fi
-
-          if [ -z "$RELEASE_ID" ]; then
-            echo "Failed to create/get Gitee release — skipping asset upload"
-            exit 0
+            echo "Gitee release creation failed: $(echo $RESP | head -c 300)"
+            exit 1
           fi
 
           echo "Gitee release ID: ${RELEASE_ID}"

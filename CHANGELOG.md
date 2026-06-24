@@ -1,20 +1,14 @@
 # 更新日志
 
+## [0.1.1] — 2026-06-24
+
+### CI
+- Gitee 同步修复：git push 使用 `oauth2:TOKEN` 格式认证 + 创建 Release 时传 `target_commitish`
+
 ## [0.1.0] — 2026-06-24
 
 ### 修复
 - ASAR 压缩等级从 maximum 改为 normal，修复 Linux 启动慢 30s+ 的问题
-
-### CI
-- Gitee 同步改用 form-data 请求 + target_commitish 参数，修复 Gitee Release 创建失败的问题
-- 验证 Gitee Releases 自动同步流程
-
-## [0.0.9] — 2026-06-24
-
-## [0.0.8] — 2026-06-24
-
-### CI
-- 验证 Gitee Releases 自动同步流程（测试版，未包含 tag 推送修复）
 
 ## [0.0.6] — 2026-06-23
 
