@@ -1,5 +1,10 @@
 # 更新日志
 
+## [0.1.4] — 2026-06-24
+
+### CI
+- Gitee 同步：移除 set -e，git push 失败不阻断；target_commitish 从 SHA 改为 main
+
 ## [0.1.3] — 2026-06-24
 
 ### CI
