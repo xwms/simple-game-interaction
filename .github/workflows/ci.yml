@@ -121,15 +121,13 @@ jobs:
           set -e
           TAG="${GITHUB_REF_NAME}"
           SHA=$(git rev-parse "${TAG}")
+          GITEE_URL="https://oauth2:${GITEE_TOKEN}@gitee.com/xwms/simple-game-interaction.git"
           echo "Syncing ${TAG} (${SHA}) to Gitee..."
 
-          # 通过 API 创建 tag ref（已存在则忽略错误）
-          echo "Creating tag ref on Gitee..."
-          curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/git/refs" \
-            --data-urlencode "access_token=${GITEE_TOKEN}" \
-            --data-urlencode "ref=refs/tags/${TAG}" \
-            --data-urlencode "sha=${SHA}" \
-            -w "\nHTTP_CODE:%{http_code}" || true
+          # 推送 main 分支 + tag 到 Gitee（确保 commit 对象存在）
+          echo "Pushing main branch and tag to Gitee..."
+          git push "${GITEE_URL}" main
+          git push "${GITEE_URL}" "${TAG}"
 
           # 创建 Release（target_commitish 传入 SHA）
           echo "Creating Gitee release..."

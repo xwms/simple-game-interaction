@@ -1,14 +1,9 @@
 # 更新日志
 
-## [0.1.2] — 2026-06-24
+## [0.1.3] — 2026-06-24
 
 ### CI
-- Gitee 同步：改用 git refs API 创建 tag + form-data 创建 Release
-
-## [0.1.1] — 2026-06-24
-
-### CI
-- Gitee 同步修复：git push 使用 `oauth2:TOKEN` 格式认证 + 创建 Release 时传 `target_commitish`
+- Gitee 同步：先 git push main 分支 + tag，再创建 Release 并上传安装包
 
 ## [0.1.0] — 2026-06-24
 
