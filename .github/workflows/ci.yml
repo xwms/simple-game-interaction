@@ -123,12 +123,15 @@ jobs:
           SHA=$(git rev-parse "${TAG}")
           echo "Syncing ${TAG} (${SHA}) to Gitee..."
 
-          # 推送 tag 到 Gitee（API 创建 Release 需要 tag 先行）
-          # 用户名固定为 oauth2，密码为 personal access token
-          echo "Pushing tag to Gitee..."
-          git push "https://oauth2:${GITEE_TOKEN}@gitee.com/xwms/simple-game-interaction.git" "${TAG}"
+          # 通过 API 创建 tag ref（已存在则忽略错误）
+          echo "Creating tag ref on Gitee..."
+          curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/git/refs" \
+            --data-urlencode "access_token=${GITEE_TOKEN}" \
+            --data-urlencode "ref=refs/tags/${TAG}" \
+            --data-urlencode "sha=${SHA}" \
+            -w "\nHTTP_CODE:%{http_code}" || true
 
-          # 创建 Release
+          # 创建 Release（target_commitish 传入 SHA）
           echo "Creating Gitee release..."
           RELEASE_BODY=$(cat release-body.md)
           RESP=$(curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases" \

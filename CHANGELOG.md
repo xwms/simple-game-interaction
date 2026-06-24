@@ -1,5 +1,10 @@
 # 更新日志
 
+## [0.1.2] — 2026-06-24
+
+### CI
+- Gitee 同步：改用 git refs API 创建 tag + form-data 创建 Release
+
 ## [0.1.1] — 2026-06-24
 
 ### CI
