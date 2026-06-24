@@ -147,12 +147,24 @@ jobs:
 
           echo "Gitee release ID: ${RELEASE_ID}"
 
-          # 上传各个安装包
+          # 上传各个安装包（Gitee API 单文件限制 100MB）
           for file in artifacts/package-*/*; do
             [ -f "$file" ] || continue
-            echo "Uploading $(basename "$file")..."
-            curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${RELEASE_ID}/attach_files" \
+            SIZE=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo 0)
+            SIZE_MB=$((SIZE / 1048576))
+            if [ "$SIZE" -gt 104857600 ]; then
+              echo "Skip $(basename "$file") (${SIZE_MB}MB > 100MB, Gitee API limit)"
+              continue
+            fi
+            echo "Uploading $(basename "$file") (${SIZE_MB}MB)..."
+            RESP=$(curl -s --connect-timeout 30 --max-time 300 \
+              -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${RELEASE_ID}/attach_files" \
               -F "access_token=${GITEE_TOKEN}" \
-              -F "file=@${file}" > /dev/null
+              -F "file=@${file}")
+            if echo "$RESP" | grep -q '"error"\|"message"'; then
+              echo "Upload failed: $(echo $RESP | head -c 200)"
+            else
+              echo "Upload OK"
+            fi
           done
           echo "Gitee sync complete"
