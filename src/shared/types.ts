@@ -46,7 +46,10 @@ export interface GameDetectResult {
   name: string
   running: boolean
   portOpen: boolean
+  /** 主端口（兼容旧字段，取 ports[0]） */
   port: number
+  /** 该游戏进程实际监听的所有端口 */
+  ports: number[]
   pid?: number
   processName?: string
 }

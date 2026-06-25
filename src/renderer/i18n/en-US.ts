@@ -58,6 +58,7 @@ export default {
     manualPort: '+ Manual Port',
     manualTitle: 'Manual game and port',
     portLabel: 'Port',
+    portsLabel: 'Ports',
     portPlaceholder: 'Port',
     cancel: 'Cancel',
     confirm: 'Add',

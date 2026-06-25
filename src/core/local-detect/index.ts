@@ -38,21 +38,26 @@ async function detectLocalGames(): Promise<GameDetectResult[]> {
     const running = allMatches.length > 0
     let pid: number | undefined
     let processName: string | undefined
-    let detectedPort = game.defaultPort
+    const allPorts: number[] = []
     let portOpen = false
 
-    // 遍历所有匹配的进程，取第一个实际在监听端口的
-    // 避免 HMCL（Java 启动器）等非服务端进程的干扰
+    // 遍历所有匹配的进程，收集每个进程实际监听的端口
+    // 多个同游戏进程同时运行时（如 HMCL 启动器 + Minecraft 服务端），
+    // 全部列出让用户选择
     for (const match of allMatches) {
       const actualPorts = await portChecker.findPortsByPid(match.pid)
-      if (actualPorts.length > 0) {
-        pid = match.pid
-        processName = match.name
-        detectedPort = actualPorts[0]
-        portOpen = true
-        break
+      processName ??= match.name
+      for (const p of actualPorts) {
+        if (!allPorts.includes(p)) {
+          allPorts.push(p)
+          if (pid === undefined) {
+            pid = match.pid
+          }
+        }
       }
     }
+
+    portOpen = allPorts.length > 0
 
     // 都没监听端口时仍记录首个匹配的进程（供 UI 显示）
     if (!portOpen && allMatches.length > 0) {
@@ -65,7 +70,8 @@ async function detectLocalGames(): Promise<GameDetectResult[]> {
       name: game.name,
       running,
       portOpen,
-      port: detectedPort,
+      port: allPorts[0] || game.defaultPort,
+      ports: allPorts,
       pid,
       processName
     }
@@ -100,19 +106,24 @@ async function detectGame(gameId: string): Promise<GameDetectResult | null> {
   const running = allMatches.length > 0
   let pid: number | undefined
   let processName: string | undefined
-  let detectedPort = game.defaultPort
+  const allPorts: number[] = []
   let portOpen = false
 
+  // 遍历所有匹配的进程，收集所有端口
   for (const match of allMatches) {
     const actualPorts = await portChecker.findPortsByPid(match.pid)
-    if (actualPorts.length > 0) {
-      pid = match.pid
-      processName = match.name
-      detectedPort = actualPorts[0]
-      portOpen = true
-      break
+    processName ??= match.name
+    for (const p of actualPorts) {
+      if (!allPorts.includes(p)) {
+        allPorts.push(p)
+        if (pid === undefined) {
+          pid = match.pid
+        }
+      }
     }
   }
+
+  portOpen = allPorts.length > 0
 
   if (!portOpen && allMatches.length > 0) {
     pid = allMatches[0].pid
@@ -124,7 +135,8 @@ async function detectGame(gameId: string): Promise<GameDetectResult | null> {
     name: game.name,
     running,
     portOpen,
-    port: detectedPort,
+    port: allPorts[0] || game.defaultPort,
+    ports: allPorts,
     pid,
     processName
   }

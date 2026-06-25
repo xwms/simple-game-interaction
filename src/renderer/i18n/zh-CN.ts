@@ -58,6 +58,7 @@ export default {
     manualPort: '+ 手动输入端口',
     manualTitle: '手动指定游戏和端口',
     portLabel: '端口',
+    portsLabel: '端口',
     portPlaceholder: '端口号',
     cancel: '取消',
     confirm: '确认添加',
