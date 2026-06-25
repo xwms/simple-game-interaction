@@ -31,7 +31,18 @@ if (isDev) {
  * 逻辑说明：按顺序执行：配置日志文件 → 创建菜单 → 注册 IPC → 创建窗口 → 创建托盘。
  *           macOS 下 app.dock 在创建窗口前显示。
  */
-function bootstrap() {
+
+// 单实例锁：防止启动多个实例
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    showMainWindow()
+  })
+
+  function bootstrap() {
   // 配置日志文件路径
   const { setLogFilePath } = require('../core/utils/logger')
   setLogFilePath(path.join(app.getPath('userData'), 'logs', 'app.log'))
@@ -57,6 +68,7 @@ app.whenReady().then(() => {
     }
   })
 })
+}
 
 app.on('window-all-closed', () => {
   // macOS 下不退出应用（保持 Dock 图标）
