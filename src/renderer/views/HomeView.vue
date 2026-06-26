@@ -18,6 +18,26 @@ import { version as appVersion } from '../../../package.json'
 import { getCachedUpdate, fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 import type { UpdateCheckData } from '../utils/update-cache'
 
+// Vite ?raw 导入 markdown 文件作为原始字符串
+// @ts-ignore — Vite 处理 ?raw 后缀，TS 类型声明在下方
+import changelogRaw from '../../../CHANGELOG.md?raw'
+
+declare module '*.md?raw' {
+  const content: string
+  export default content
+}
+
+/**
+ * 功能描述：从本地 CHANGELOG.md 提取第一个版本段（--- 之前的内容）
+ *
+ * @returns 首个版本段的原始 markdown
+ */
+function getLocalChangelog(): string {
+  const endIdx = changelogRaw.indexOf('\n---\n')
+  if (endIdx !== -1) return changelogRaw.slice(0, endIdx + 1)
+  return changelogRaw
+}
+
 const router = useRouter()
 const roomStore = useRoomStore()
 const { status, result, refresh } = useNetworkDetect()
@@ -34,7 +54,7 @@ const updateStatus = ref<'checking' | 'latest' | 'available' | 'error' | 'downlo
     : 'checking'
 )
 const updateVersion = ref(_cachedInit?.version || '')
-const releaseNotes = ref(_cachedInit?.releaseNotes || '')
+const releaseNotes = ref(_cachedInit?.releaseNotes || getLocalChangelog())
 const updateDownloadUrl = ref(_cachedInit?.downloadUrl || '')
 const updateFilePath = ref(_cachedInit?.installPath || '')
 const downloadedBytes = ref(_cachedInit?.downloadedBytes || 0)
@@ -56,10 +76,13 @@ async function checkUpdate(): Promise<void> {
     if (data) {
       applyUpdateData(data)
     } else {
-      updateStatus.value = 'error'
+      // API 失败时用本地 CHANGELOG 兜底，界面不显示"错误"
+      updateStatus.value = 'latest'
+      releaseNotes.value = getLocalChangelog()
     }
   } catch {
-    updateStatus.value = 'error'
+    updateStatus.value = 'latest'
+    releaseNotes.value = getLocalChangelog()
   }
 }
 
@@ -82,7 +105,7 @@ function applyUpdateData(data: UpdateCheckData): void {
     updateStatus.value = 'latest'
   }
   updateVersion.value = data.version
-  releaseNotes.value = data.releaseNotes || ''
+  releaseNotes.value = data.releaseNotes || getLocalChangelog()
 }
 
 /**
