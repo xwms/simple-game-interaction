@@ -220,6 +220,14 @@ function findPlatformAsset(assets) {
  */
 async function checkForUpdates(versionOverride) {
   const now = Date.now()
+
+  // 缓存命中但版本不一致时（如 dev 模式 app.getVersion 返回 Electron 版本），
+  // 忽略缓存重新请求
+  if (versionOverride && updateCache && updateCache.version !== versionOverride) {
+    updateCache = null
+    lastCheckTime = 0
+  }
+
   if (now - lastCheckTime < UPDATE_CACHE_TTL && updateCache) {
     // 缓存命中时重新验证安装包文件是否仍存在
     if (updateCache.installAvailable) {
