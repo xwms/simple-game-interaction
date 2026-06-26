@@ -237,15 +237,18 @@ async function checkForUpdates(versionOverride) {
   const currentVersion = versionOverride || app.getVersion()
   let releaseData = null
   let source
+  console.log(`[updater] 检查更新，当前版本: ${currentVersion}`)
 
   // 优先 Gitee
   if (defaultConfig.gitee.owner && defaultConfig.gitee.repo) {
     try {
       const url = getGiteeApiUrl(defaultConfig.gitee.owner, defaultConfig.gitee.repo)
+      console.log(`[updater] 请求 Gitee API: ${url}`)
       releaseData = await fetchJson(url)
       source = 'gitee'
-    } catch {
-      // Gitee 失败，降级到 GitHub
+      console.log('[updater] Gitee API 成功')
+    } catch (e) {
+      console.log(`[updater] Gitee API 失败: ${e.message}`)
     }
   }
 
@@ -253,14 +256,17 @@ async function checkForUpdates(versionOverride) {
   if (!releaseData && defaultConfig.github.owner && defaultConfig.github.repo) {
     try {
       const url = getGitHubApiUrl(defaultConfig.github.owner, defaultConfig.github.repo)
+      console.log(`[updater] 请求 GitHub API: ${url}`)
       releaseData = await fetchJson(url)
       source = 'github'
-    } catch {
-      // 两者都不可用
+      console.log('[updater] GitHub API 成功')
+    } catch (e) {
+      console.log(`[updater] GitHub API 失败: ${e.message}`)
     }
   }
 
   if (!releaseData) {
+    console.log('[updater] 所有 API 都失败，返回 null')
     updateCache = null
     lastCheckTime = now
     return null

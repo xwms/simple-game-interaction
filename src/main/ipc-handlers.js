@@ -332,9 +332,12 @@ function registerIpcHandlers() {
   ipcMain.handle('update:check', async (_event, options) => {
     try {
       const { checkForUpdates } = require('./updater')
+      console.log(`[ipc] update:check 请求，options:`, options)
       const result = await checkForUpdates(options?.currentVersion)
+      console.log(`[ipc] update:check 结果:`, result ? `hasUpdate=${result.hasUpdate}, version=${result.version}` : 'null')
       return { success: true, data: result }
     } catch (err) {
+      console.error(`[ipc] update:check 异常:`, err.message)
       return { success: false, error: err.message }
     }
   })
