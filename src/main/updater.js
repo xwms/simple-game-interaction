@@ -144,6 +144,11 @@ function fetchJson(url) {
       timeout: 8000
     }
 
+    // GitHub API 在国内可能被 SNI 阻断导致证书验证失败
+    if (url.startsWith('https')) {
+      options.rejectUnauthorized = false
+    }
+
     client.get(url, options, (res) => {
       let data = ''
       res.on('data', (chunk) => (data += chunk))
