@@ -28,14 +28,35 @@ declare module '*.md?raw' {
 }
 
 /**
- * 功能描述：从本地 CHANGELOG.md 提取第一个版本段（--- 之前的内容）
+ * 功能描述：从本地 CHANGELOG.md 提取指定版本的更新日志
  *
- * @returns 首个版本段的原始 markdown
+ * 逻辑说明：在 CHANGELOG 中查找 `## [version]` 段，提取到下一个 `## [` 或 `---` 为止。
+ *           版本未指定或找不到时返回首个版本段。
+ *
+ * @param version - 可选，要查找的版本号（如 "0.0.8"）
+ * @returns 匹配版本段的原始 markdown
  */
-function getLocalChangelog(): string {
-  const endIdx = changelogRaw.indexOf('\n---\n')
-  if (endIdx !== -1) return changelogRaw.slice(0, endIdx + 1)
-  return changelogRaw
+function getLocalChangelog(version?: string): string {
+  // 查找指定版本或首个版本段
+  const sectionPattern = version
+    ? new RegExp(`## \\[${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`)
+    : /^## \[/m
+
+  const startMatch = changelogRaw.match(sectionPattern)
+  if (!startMatch) {
+    // 指定版本未找到，回退到首个版本段
+    if (version) return getLocalChangelog()
+    // 一个版本段都没有，返回全部内容前两行（标题）
+    return changelogRaw.split('\n').slice(0, 2).join('\n')
+  }
+
+  const startIdx = startMatch.index!
+  // 从匹配位置之后找下一个版本段或分隔线
+  const remaining = changelogRaw.slice(startIdx + startMatch[0].length)
+  const nextSection = remaining.match(/\n(?:## \[|---\n)/)
+  const endIdx = nextSection ? startIdx + startMatch[0].length + nextSection.index! : changelogRaw.length
+
+  return changelogRaw.slice(startIdx, endIdx)
 }
 
 const router = useRouter()
@@ -54,7 +75,7 @@ const updateStatus = ref<'checking' | 'latest' | 'available' | 'error' | 'downlo
     : 'checking'
 )
 const updateVersion = ref(_cachedInit?.version || '')
-const releaseNotes = ref(_cachedInit?.releaseNotes || getLocalChangelog())
+const releaseNotes = ref(_cachedInit?.releaseNotes || getLocalChangelog(currentVersion.value))
 const updateDownloadUrl = ref(_cachedInit?.downloadUrl || '')
 const updateFilePath = ref(_cachedInit?.installPath || '')
 const downloadedBytes = ref(_cachedInit?.downloadedBytes || 0)
@@ -78,11 +99,11 @@ async function checkUpdate(): Promise<void> {
     } else {
       // API 失败时用本地 CHANGELOG 兜底，界面不显示"错误"
       updateStatus.value = 'latest'
-      releaseNotes.value = getLocalChangelog()
+      releaseNotes.value = getLocalChangelog(currentVersion.value)
     }
   } catch {
     updateStatus.value = 'latest'
-    releaseNotes.value = getLocalChangelog()
+    releaseNotes.value = getLocalChangelog(currentVersion.value)
   }
 }
 
@@ -105,7 +126,7 @@ function applyUpdateData(data: UpdateCheckData): void {
     updateStatus.value = 'latest'
   }
   updateVersion.value = data.version
-  releaseNotes.value = data.releaseNotes || getLocalChangelog()
+  releaseNotes.value = data.releaseNotes || getLocalChangelog(data.version)
 }
 
 /**
