@@ -1,5 +1,22 @@
 # 更新日志
 
+## [0.0.8] — 2026-06-26
+
+### 新增
+- 后台下载更新：点击下载后不阻塞 UI，完成后通知可安装
+- deb 安装改进：支持 gksudo/kdesudo/pkexec/sudo 多种提权方式
+- 新增 Arch Linux pacman 包安装支持（pacman -U --noconfirm）
+
+### 修复
+- Linux AppImage ETXTBSY 错误：运行中 AppImage 更新改用 unlink+mv 策略
+- 端口检测过滤 localhost-only 端口（JVM 临时端口不再误扫）
+- 游戏检测结果按端口展开为独立卡片（每个端口一张卡片）
+
+### 变更
+- 安装通知中的操作按钮使用 Naive UI NButton 组件（不再被对话框拉伸）
+- 更新安装确认对话框适配英文
+- 创建房间时兼容复合 gameId（自动剥离 :port 后缀）
+
 ## [0.0.7] — 2026-06-24
 
 ### 新增
