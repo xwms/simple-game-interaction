@@ -386,6 +386,10 @@ function downloadUpdate(downloadUrl, destPath, onProgress, redirectCount) {
       }
     }
 
+    if (downloadUrl.startsWith('https')) {
+      options.rejectUnauthorized = false
+    }
+
     // 已有部分文件：请求 Range 续传（仅首次请求）
     if (existingSize > 0) {
       options.headers.Range = `bytes=${existingSize}-`
