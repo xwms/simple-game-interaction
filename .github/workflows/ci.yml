@@ -100,9 +100,7 @@ jobs:
 
       - name: Generate release notes
         run: |
-          echo "# 更新日志" > release-body.md
-          echo "" >> release-body.md
-          sed -n '/^## /,/^## /p' CHANGELOG.md | head -n -2 >> release-body.md
+          awk '/^---$/{exit}1' CHANGELOG.md > release-body.md
 
       - uses: softprops/action-gh-release@v2
         with:
