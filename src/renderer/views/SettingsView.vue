@@ -9,11 +9,11 @@
  */
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import { useSettingsStore } from '../store/settings'
-import { fetchUpdate } from '../utils/update-cache'
+import { fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 
 const settings = useSettingsStore()
 const { t } = useI18n()
@@ -55,9 +55,8 @@ const updateState = ref<UpdateState>('idle')
 const updateVersion = ref('')
 const updateDownloadUrl = ref('')
 const updateFilePath = ref('')
-const downloadProgress = ref(0)
 const downloadedBytes = ref(0)
-let progressCleanup: (() => void) | null = null
+const downloadState = getDownloadState()
 
 /**
  * 功能描述：手动检查更新（带缓存）
@@ -77,6 +76,8 @@ async function handleCheckUpdate(): Promise<void> {
         if (data.installAvailable && data.installPath) {
           updateFilePath.value = data.installPath
           updateState.value = 'done'
+        } else if (downloadState.isDownloading) {
+          updateState.value = 'downloading'
         } else {
           updateState.value = 'available'
         }
@@ -92,32 +93,30 @@ async function handleCheckUpdate(): Promise<void> {
 }
 
 /**
- * 功能描述：下载更新包
+ * 功能描述：下载更新包（后台运行，不阻塞 UI）
  *
- * 逻辑说明：监听主进程的 update:download-progress 事件更新进度条，
- *           下载完成后进入 done 状态，显示安装按钮。
+ * 逻辑说明：改为 fire-and-forget 模式，App.vue 的持久监听器更新全局
+ *           downloadState，本组件通过 watch 同步状态变化。
  */
 async function handleDownload(): Promise<void> {
   if (!updateDownloadUrl.value) return
   updateState.value = 'downloading'
-  downloadProgress.value = 0
+  startBackgroundDownload(updateDownloadUrl.value, updateVersion.value)
+}
 
-  progressCleanup = window.electronAPI.on('update:download-progress', (percent: unknown) => {
-    downloadProgress.value = percent as number
-  })
+// 同步全局下载状态
+watch(() => downloadState.done, (done) => {
+  if (done) {
+    updateFilePath.value = downloadState.filePath
+    updateState.value = 'done'
+  }
+})
 
-  try {
-    const result = await window.electronAPI.invoke('update:download', updateDownloadUrl.value, updateVersion.value)
-    if (result.success) {
-      updateFilePath.value = (result.data as { filePath: string }).filePath
-      updateState.value = 'done'
-    } else {
-      updateState.value = 'error'
-    }
-  } catch {
+watch(() => downloadState.error, (err) => {
+  if (err && !downloadState.isDownloading) {
     updateState.value = 'error'
   }
-}
+})
 
 /**
  * 功能描述：安装更新
@@ -161,10 +160,13 @@ function handleRemoveBg(): void {
   message.success(t('settings.backgroundRemoved'))
 }
 
-onUnmounted(() => {
-  if (progressCleanup) {
-    progressCleanup()
-    progressCleanup = null
+// 进入页面时如果后台下载已完成，同步状态
+onMounted(() => {
+  if (downloadState.done) {
+    updateFilePath.value = downloadState.filePath
+    updateState.value = 'done'
+  } else if (downloadState.isDownloading) {
+    updateState.value = 'downloading'
   }
 })
 </script>
@@ -260,12 +262,12 @@ onUnmounted(() => {
             </n-button>
           </div>
 
-          <div v-else-if="updateState === 'downloading'" class="flex flex-col gap-2">
+          <div v-else-if="updateState === 'downloading' || downloadState.isDownloading" class="flex flex-col gap-2">
             <span class="text-sm text-gray-500">
-              {{ t('settings.updateDownloading', { progress: downloadProgress }) }}
+              {{ t('settings.updateDownloading', { progress: downloadState.progress }) }}
             </span>
             <div class="w-48 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: downloadProgress + '%' }"></div>
+              <div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: downloadState.progress + '%' }"></div>
             </div>
           </div>
 

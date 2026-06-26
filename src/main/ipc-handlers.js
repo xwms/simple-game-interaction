@@ -359,6 +359,38 @@ function registerIpcHandlers() {
     }
   })
 
+  /**
+   * 功能描述：后台下载更新（fire-and-forget）
+   *
+   * 逻辑说明：与 update:download 不同，本 handler 立即返回 success，
+   *           下载在后台异步进行。进度/完成/错误通过 webContents.send 推送。
+   *           渲染进程无需阻塞等待下载完成。
+   */
+  ipcMain.handle('update:start-download', (event, downloadUrl, version) => {
+    const { downloadUpdate, getUpdateDestPath, markDownloadComplete } = require('./updater')
+    const destPath = getUpdateDestPath()
+
+    downloadUpdate(downloadUrl, destPath, (percent) => {
+      const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+      for (const win of wins) {
+        win.webContents.send('update:download-progress', percent)
+      }
+    }).then((filePath) => {
+      markDownloadComplete(version)
+      const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+      for (const win of wins) {
+        win.webContents.send('update:download-complete', { filePath, version })
+      }
+    }).catch((err) => {
+      const wins = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed())
+      for (const win of wins) {
+        win.webContents.send('update:download-error', err.message)
+      }
+    })
+
+    return { success: true }
+  })
+
   ipcMain.handle('update:install', async (_event, filePath) => {
     try {
       const { installUpdate } = require('./updater')

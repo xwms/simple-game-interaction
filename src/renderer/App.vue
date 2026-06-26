@@ -19,6 +19,7 @@ import { useRoomStore } from './store/room'
 import { useTunnelStore } from './store/tunnel'
 import { useSettingsStore } from './store/settings'
 import { useLogStore } from './store/log'
+import { getDownloadState } from './utils/update-cache'
 
 const { detect } = useNetworkDetect()
 const logStore = useLogStore()
@@ -28,6 +29,8 @@ const tunnelStore = useTunnelStore()
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+
+const downloadState = getDownloadState()
 
 const showRoomFloatingBtn = computed(() => {
   return roomStore.roomCode !== '' && !route.path.startsWith('/room/')
@@ -86,6 +89,25 @@ onMounted(() => {
   }
   // 同步关闭行为设置到主进程
   window.electronAPI.invoke('app:set-close-behavior', settings.closeBehavior)
+
+  // ─── 后台下载持久监听器 ─────────────────────────────
+  window.electronAPI.on('update:download-progress', (percent: unknown) => {
+    downloadState.progress = percent as number
+  })
+
+  window.electronAPI.on('update:download-complete', (data: unknown) => {
+    const { filePath, version } = data as { filePath: string; version: string }
+    downloadState.isDownloading = false
+    downloadState.done = true
+    downloadState.filePath = filePath
+    downloadState.version = version
+    downloadState.progress = 100
+  })
+
+  window.electronAPI.on('update:download-error', (msg: unknown) => {
+    downloadState.isDownloading = false
+    downloadState.error = msg as string
+  })
 })
 
 // 主题变化时更新遮罩颜色

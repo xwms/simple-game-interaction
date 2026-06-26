@@ -84,7 +84,25 @@ async function detectLocalGames(): Promise<GameDetectResult[]> {
     }
   }
 
-  return results
+  // 展开：每个端口一个独立条目（gameId 追加端口号以去重）
+  // 避免多个端口挤在一个卡片中
+  const flatResults: GameDetectResult[] = []
+  for (const r of results) {
+    if (r.ports.length > 1) {
+      for (const p of r.ports) {
+        flatResults.push({
+          ...r,
+          port: p,
+          ports: [p],
+          gameId: `${r.gameId}:${p}`
+        })
+      }
+    } else {
+      flatResults.push(r)
+    }
+  }
+
+  return flatResults
 }
 
 /**

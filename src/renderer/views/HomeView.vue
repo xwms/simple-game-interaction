@@ -7,7 +7,7 @@
  */
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useRoomStore } from '../store/room'
@@ -15,7 +15,7 @@ import { useNetworkDetect, natTypeLabel, inferConnectionPath } from '../composab
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { version as appVersion } from '../../../package.json'
-import { getCachedUpdate, fetchUpdate } from '../utils/update-cache'
+import { getCachedUpdate, fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 import type { UpdateCheckData } from '../utils/update-cache'
 
 const router = useRouter()
@@ -37,9 +37,8 @@ const updateVersion = ref(_cachedInit?.version || '')
 const releaseNotes = ref(_cachedInit?.releaseNotes || '')
 const updateDownloadUrl = ref(_cachedInit?.downloadUrl || '')
 const updateFilePath = ref(_cachedInit?.installPath || '')
-const downloadProgress = ref(0)
 const downloadedBytes = ref(_cachedInit?.downloadedBytes || 0)
-let progressCleanup: (() => void) | null = null
+const downloadState = getDownloadState()
 
 /**
  * 功能描述：检查更新（带 5 分钟缓存）
@@ -87,30 +86,30 @@ function applyUpdateData(data: UpdateCheckData): void {
 }
 
 /**
- * 功能描述：下载更新
+ * 功能描述：下载更新（后台运行，不阻塞 UI）
+ *
+ * 逻辑说明：改为 fire-and-forget 模式。App.vue 的持久监听器负责更新
+ *           全局 downloadState，本组件通过 watch 同步状态变化。
  */
 async function handleDownload(): Promise<void> {
   if (!updateDownloadUrl.value) return
   updateStatus.value = 'downloading'
-  downloadProgress.value = 0
+  startBackgroundDownload(updateDownloadUrl.value, updateVersion.value)
+}
 
-  // 监听下载进度
-  progressCleanup = window.electronAPI.on('update:download-progress', (percent: unknown) => {
-    downloadProgress.value = percent as number
-  })
+// 同步全局下载状态到本地状态
+watch(() => downloadState.done, (done) => {
+  if (done) {
+    updateFilePath.value = downloadState.filePath
+    updateStatus.value = 'done'
+  }
+})
 
-  try {
-    const result = await window.electronAPI.invoke('update:download', updateDownloadUrl.value, updateVersion.value)
-    if (result.success) {
-      updateFilePath.value = (result.data as { filePath: string }).filePath
-      updateStatus.value = 'done'
-    } else {
-      updateStatus.value = 'error'
-    }
-  } catch {
+watch(() => downloadState.error, (err) => {
+  if (err && !downloadState.isDownloading) {
     updateStatus.value = 'error'
   }
-}
+})
 
 /**
  * 功能描述：安装更新
@@ -143,10 +142,11 @@ onMounted(() => {
   setTimeout(checkUpdate, 3000)
 })
 
-onUnmounted(() => {
-  if (progressCleanup) {
-    progressCleanup()
-    progressCleanup = null
+// 如果返回首页时后台下载已完成，同步状态
+onMounted(() => {
+  if (downloadState.done) {
+    updateFilePath.value = downloadState.filePath
+    updateStatus.value = 'done'
   }
 })
 </script>
@@ -230,9 +230,9 @@ onUnmounted(() => {
         <template v-else-if="updateStatus === 'available'">
           v{{ currentVersion }} · <span class="text-primary cursor-pointer hover:underline inline-flex items-center gap-1" @click="handleDownload"><span class="iconfont icon-banbengengxin" />{{ downloadedBytes > 0 ? t('home.updateResume') : t('home.updateAvailable', { version: updateVersion }) }}</span>
         </template>
-        <template v-else-if="updateStatus === 'downloading'">
-          v{{ currentVersion }} · {{ t('home.downloading', { progress: downloadProgress }) }}
-          <div class="w-32 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-1 mx-auto overflow-hidden"><div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: downloadProgress + '%' }"></div></div>
+        <template v-else-if="updateStatus === 'downloading' || downloadState.isDownloading">
+          v{{ currentVersion }} · {{ t('home.downloading', { progress: downloadState.progress }) }}
+          <div class="w-32 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-1 mx-auto overflow-hidden"><div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: downloadState.progress + '%' }"></div></div>
         </template>
         <template v-else-if="updateStatus === 'done'">
           v{{ currentVersion }} · <span class="text-green-500 cursor-pointer hover:underline inline-flex items-center gap-1" @click="handleInstall">{{ t('home.installUpdate', { version: updateVersion }) }}</span>

@@ -52,7 +52,10 @@ const CHANNEL_WHITELIST = [
   'update:check',
   'update:available',
   'update:download',
+  'update:start-download',
   'update:download-progress',
+  'update:download-complete',
+  'update:download-error',
   'update:install',
 
   // 日志

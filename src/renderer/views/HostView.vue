@@ -118,7 +118,8 @@ async function handleCreate(): Promise<void> {
   isCreating.value = true
 
   let game = games.value.find((g: any) => g.gameId === selectedGame.value)
-  const actualGameId = selectedGame.value.replace(/^manual-/, '')
+  // 从复合 gameId（如 "minecraft-java:36965"）中提取真实游戏 ID
+  const actualGameId = selectedGame.value.replace(/^manual-/, '').replace(/:\d+$/, '')
   const port = game?.port ?? 0
   const name = game?.gameName ?? actualGameId
 

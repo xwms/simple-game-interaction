@@ -9,7 +9,14 @@ export default {
   },
   notify: {
     connectionError: 'Connection Error',
-    roomError: 'Room Error'
+    roomError: 'Room Error',
+    updateComplete: 'Download Complete',
+    updateReady: 'v{version} is ready',
+    installNow: 'Install',
+    downloadError: 'Download Failed',
+    updateInstallTitle: 'Install Update',
+    updateInstallConfirm: 'You are currently in a game session. Installing will disconnect all connections. Continue?',
+    installConfirmText: 'Install'
   },
   nav: {
     home: 'Home',

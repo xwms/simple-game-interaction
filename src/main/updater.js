@@ -15,7 +15,7 @@ const https = require('https')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
-const { spawn, execSync } = require('child_process')
+const { spawn, spawnSync, execSync, execFileSync } = require('child_process')
 const { app, shell } = require('electron')
 
 // ─── 配置 ────────────────────────────────────────────
@@ -32,15 +32,18 @@ const defaultConfig = {
  * 功能描述：返回当前平台的安装包扩展名
  *
  * 逻辑说明：Linux 根据安装方式选择：AppImage 环境变量存在时用 .AppImage，
- *           否则使用 .deb（dpkg/apt 安装）。
+ *           否则 Arch Linux 用 .pacman，其余用 .deb。
  *
- * @returns {string} 扩展名（.exe / .dmg / .AppImage / .deb）
+ * @returns {string} 扩展名（.exe / .dmg / .AppImage / .deb / .pacman）
  */
 function getPlatformAssetSuffix() {
   switch (process.platform) {
     case 'win32': return '.exe'
     case 'darwin': return '.dmg'
-    case 'linux': return process.env.APPIMAGE ? '.AppImage' : '.deb'
+    case 'linux': {
+      if (process.env.APPIMAGE) return '.AppImage'
+      return _detectLinuxDistro() === 'arch' ? '.pacman' : '.deb'
+    }
     default: return '.exe'
   }
 }
@@ -426,12 +429,89 @@ function downloadUpdate(downloadUrl, destPath, onProgress, redirectCount) {
   })
 }
 
+// ─── Linux 安装工具函数 ─────────────────────────────
+
+/**
+ * 功能描述：探测 Linux 发行版类型
+ *
+ * @returns {'debian'|'arch'|'unknown'} 发行版类型
+ */
+function _detectLinuxDistro() {
+  if (process.platform !== 'linux') return 'unknown'
+  // Arch Linux
+  try {
+    if (fs.existsSync('/etc/arch-release')) return 'arch'
+    execFileSync('which', ['pacman'], { encoding: 'utf-8', timeout: 2000 })
+    return 'arch'
+  } catch { /* not arch */ }
+  // Debian / Ubuntu
+  try {
+    if (fs.existsSync('/etc/debian_version')) return 'debian'
+    execFileSync('which', ['dpkg'], { encoding: 'utf-8', timeout: 2000 })
+    return 'debian'
+  } catch { /* not debian */ }
+  return 'unknown'
+}
+
+/**
+ * 功能描述：探测可用的图形化提权命令
+ *
+ * 逻辑说明：按优先级探测 gksudo / kdesudo / pkexec / sudo。
+ *          优先使用带 GUI 弹窗的工具，sudo 作为最后回退。
+ *
+ * @returns {string} 提权命令
+ */
+function _detectSudoCommand() {
+  const candidates = ['gksudo', 'kdesudo', 'pkexec', 'sudo']
+  for (const cmd of candidates) {
+    try {
+      execFileSync('which', [cmd], { encoding: 'utf-8', timeout: 2000 })
+      return cmd
+    } catch { /* not available */ }
+  }
+  return 'sudo'
+}
+
+/**
+ * 功能描述：使用提权执行安装命令（同步，带超时）
+ *
+ * @param {string} sudoCmd - 提权命令
+ * @param {string} command - 要执行的命令
+ * @param {string[]} args - 参数列表
+ * @throws {Error} 安装失败或超时
+ */
+function _execWithSudo(sudoCmd, command, args) {
+  let cmd, cmdArgs
+
+  switch (sudoCmd) {
+    case 'pkexec':
+      cmd = 'pkexec'
+      cmdArgs = [command, ...args]
+      break
+    case 'gksudo':
+      cmd = 'gksudo'
+      cmdArgs = ['--message', '需要提权来安装更新', '-c', `${command} ${args.join(' ')}`]
+      break
+    case 'kdesudo':
+      cmd = 'kdesudo'
+      cmdArgs = ['--comment', '需要提权来安装更新', '-c', `${command} ${args.join(' ')}`]
+      break
+    default: // sudo
+      cmd = 'sudo'
+      cmdArgs = [command, ...args]
+  }
+
+  const result = spawnSync(cmd, cmdArgs, { stdio: 'inherit', timeout: 300000, encoding: 'utf-8' })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(`命令退出码 ${result.status}`)
+}
+
 /**
  * 功能描述：安装更新（跨平台）
  *
  * 逻辑说明：Windows 下用 shell.openPath 启动安装器（绕过 Chromium Job Object）；
  *           macOS 下挂载 DMG → 拷贝 .app 到 /Applications → 打开；
- *           Linux 下 chmod +x 后执行 AppImage。
+ *           Linux 下根据发行版选择 deb/pacman/AppImage。
  *
  * @param {string} filePath - 下载完成的安装包路径
  * @returns {Promise<void>}
@@ -492,9 +572,21 @@ async function installUpdate(filePath) {
         spawn(currentAppImage, ['--updated'], { detached: true, stdio: 'ignore' })
         console.log(`[updater] 已替换 ${currentAppImage}，启动新版本...`)
       } catch (err) {
-        console.error(`[updater] 替换旧文件失败，回退到直接启动: ${err.message}`)
-        fs.chmodSync(filePath, 0o755)
-        spawn(filePath, ['--updated'], { detached: true, stdio: 'ignore' })
+        // ETXTBSY: 运行中的 AppImage 无法被直接 overwrite
+        // 改用 unlink + mv 策略：先删除原文件的目录项（进程因持有 fd 继续运行），
+        // 再 mv 新文件到原路径。来源参考：https://stackoverflow.com/a/1712051/1910191
+        console.error(`[updater] 替换旧文件失败，改用 unlink+mv 策略: ${err.message}`)
+        try {
+          fs.unlinkSync(currentAppImage)
+          execFileSync('mv', ['-f', filePath, currentAppImage])
+          fs.chmodSync(currentAppImage, 0o755)
+          spawn(currentAppImage, ['--updated'], { detached: true, stdio: 'ignore' })
+        } catch (err2) {
+          // 最后的回退：直接从下载路径启动
+          console.error(`[updater] unlink+mv 也失败，回退到直接启动: ${err2.message}`)
+          fs.chmodSync(filePath, 0o755)
+          spawn(filePath, ['--updated'], { detached: true, stdio: 'ignore' })
+        }
       }
     } else {
       fs.chmodSync(filePath, 0o755)
@@ -504,24 +596,49 @@ async function installUpdate(filePath) {
     return
   }
 
+  // ─── Linux deb ─────────────────────────────────────
   if (ext === '.deb') {
-    // Linux deb：使用 pkexec（PolicyKit GUI）提权安装
-    // 先检查 pkexec 是否可用，不可用时让用户手动安装
+    const sudoCmd = _detectSudoCommand()
+    console.log(`[updater] 使用 ${sudoCmd} 安装 deb: ${filePath}`)
+
     try {
-      fs.accessSync('/usr/bin/pkexec', fs.X_OK)
-    } catch {
-      console.log('[updater] pkexec 不可用，打开文件管理器让用户手动安装')
-      await shell.openPath(filePath)
-      app.quit()
-      return
+      _execWithSudo(sudoCmd, 'dpkg', ['-i', filePath])
+      console.log('[updater] deb 安装成功')
+    } catch (err) {
+      // dpkg 因缺少依赖失败时，补 apt-get install -f
+      console.error(`[updater] dpkg -i 失败，尝试修复依赖: ${err.message}`)
+      try {
+        _execWithSudo(sudoCmd, 'apt-get', ['install', '-f', '-y'])
+        console.log('[updater] 依赖修复完成')
+      } catch (err2) {
+        console.error(`[updater] 依赖修复失败: ${err2.message}`)
+      }
     }
-    console.log(`[updater] 启动 pkexec dpkg -i 安装 ${filePath}...`)
-    spawn('pkexec', ['dpkg', '-i', filePath], {
-      detached: true,
-      stdio: 'inherit'
-    })
-    // 给安装器一点时间启动，然后退出当前应用
-    setTimeout(() => app.quit(), 500)
+
+    app.quit()
+    return
+  }
+
+  // ─── Linux pacman (Arch) ───────────────────────────
+  if (ext === '.pacman' || filePath.endsWith('.pkg.tar.zst') || filePath.endsWith('.pkg.tar.xz')) {
+    const sudoCmd = _detectSudoCommand()
+    console.log(`[updater] 使用 ${sudoCmd} 安装 pacman: ${filePath}`)
+
+    try {
+      _execWithSudo(sudoCmd, 'pacman', ['-U', '--noconfirm', filePath])
+      console.log('[updater] pacman 安装成功')
+    } catch (err) {
+      console.error(`[updater] pacman -U 失败，尝试更新数据库后重试: ${err.message}`)
+      try {
+        _execWithSudo(sudoCmd, 'pacman', ['-Sy', '--noconfirm'])
+        _execWithSudo(sudoCmd, 'pacman', ['-U', '--noconfirm', filePath])
+        console.log('[updater] pacman 重试安装成功')
+      } catch (err2) {
+        console.error(`[updater] pacman 重试也失败: ${err2.message}`)
+      }
+    }
+
+    app.quit()
     return
   }
 

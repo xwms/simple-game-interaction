@@ -9,7 +9,14 @@ export default {
   },
   notify: {
     connectionError: '连接错误',
-    roomError: '房间错误'
+    roomError: '房间错误',
+    updateComplete: '下载完成',
+    updateReady: 'v{version} 已准备就绪',
+    installNow: '安装',
+    downloadError: '下载失败',
+    updateInstallTitle: '安装更新',
+    updateInstallConfirm: '当前正在联机中，安装更新将断开所有连接，是否继续？',
+    installConfirmText: '确认安装'
   },
   nav: {
     home: '首页',

@@ -227,10 +227,14 @@ async function findPortsByPid(pid: number): Promise<number[]> {
       for (const line of stdout.split('\n')) {
         // netstat -ano 输出格式:
         //   TCP    0.0.0.0:25565           0.0.0.0:0              LISTENING       12345
+        //   TCP    127.0.0.1:60228         0.0.0.0:0              LISTENING       12345
         //   TCP    [::]:25565              [::]:0                 LISTENING       12345
         //   UDP    0.0.0.0:34197           *:*                                    12345
-        const match = line.trim().match(/TCP\s+\S+:(\d+)\s+\S+:\d+\s+LISTENING/i)
-        const udpMatch = !match && line.trim().match(/UDP\s+\S+:(\d+)\s+/i)
+        const trimmed = line.trim()
+        // 跳过仅监听 127.0.0.1/::1 的端口（JVM 内部临时端口，非游戏服务器）
+        if (trimmed.includes('127.0.0.1:') || trimmed.includes('::1:')) continue
+        const match = trimmed.match(/TCP\s+\S+:(\d+)\s+\S+:\d+\s+LISTENING/i)
+        const udpMatch = !match && trimmed.match(/UDP\s+\S+:(\d+)\s+/i)
         if (match) {
           ports.push(parseInt(match[1], 10))
         } else if (udpMatch) {
@@ -269,9 +273,12 @@ async function findPortsByPid(pid: number): Promise<number[]> {
       if (!trimmed) continue
 
       // 统一提取端口号，兼容各种输出格式：
-      //   lsof: *:25565 (LISTEN)  或  *:34197（UDP 无 LISTEN 标记）
-      //   ss:   0.0.0.0:25565     或  [::]:25565
-      // 用 `:数字` + 空白/行尾 来定位端口号，避免误匹配 pid=12345 等字段
+      //   lsof: *:25565 (LISTEN)  或 127.0.0.1:60228 (LISTEN)
+      //   ss:   0.0.0.0:25565     或 127.0.0.1:60228
+      // 跳过仅监听 127.0.0.1/::1 的端口（JVM 内部临时端口，非游戏服务器）
+      const localhostMatch = trimmed.match(/(?:127\.0\.0\.1|::1):(\d+)/)
+      if (localhostMatch) continue
+
       const portMatch = trimmed.match(/:(\d+)(?=\s|$)/)
       if (portMatch) {
         const port = parseInt(portMatch[1], 10)

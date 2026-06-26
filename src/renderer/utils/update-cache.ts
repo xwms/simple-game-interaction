@@ -1,9 +1,12 @@
 /**
- * 功能描述：更新检查缓存模块
+ * 功能描述：更新检查缓存模块 + 全局后台下载状态
  *
  * 逻辑说明：模块级缓存，5 分钟 TTL。HomeView 和 SettingsView 共享同一缓存，
- *           避免每次切换页面或重复点击都请求 Gitee API。
+ *           避免每次切换页面或重复点击都请求 API。
+ *           另维护全局下载状态（reactive），下载完成后 App.vue 弹出通知。
  */
+
+import { reactive } from 'vue'
 
 export interface UpdateCheckData {
   hasUpdate: boolean
@@ -52,7 +55,7 @@ export async function fetchUpdate(currentVersion?: string): Promise<UpdateCheckD
   const cached = getCachedUpdate()
   if (cached) return cached
 
-  console.debug('[update-cache] 缓存未命中，请求 Gitee API')
+  console.debug('[update-cache] 缓存未命中，请求 API')
   try {
     const result = await window.electronAPI.invoke('update:check', { currentVersion })
     if (result.success && result.data) {
@@ -64,4 +67,56 @@ export async function fetchUpdate(currentVersion?: string): Promise<UpdateCheckD
     // 调用失败
   }
   return null
+}
+
+// ─── 全局后台下载状态 ─────────────────────────────────────
+
+export interface DownloadState {
+  isDownloading: boolean
+  progress: number
+  version: string
+  filePath: string
+  done: boolean
+  error: string | null
+}
+
+const _downloadState = reactive<DownloadState>({
+  isDownloading: false,
+  progress: 0,
+  version: '',
+  filePath: '',
+  done: false,
+  error: null
+})
+
+/**
+ * 功能描述：获取全局后台下载状态（响应式，视图可直接绑定）
+ *
+ * @returns 全局 DownloadState 对象
+ */
+export function getDownloadState(): DownloadState {
+  return _downloadState
+}
+
+/**
+ * 功能描述：启动后台下载（fire-and-forget）
+ *
+ * 逻辑说明：设置全局下载状态后调用 IPC，不 await 返回结果。
+ *           下载进度/完成/错误由 App.vue 的持久监听器更新全局状态。
+ *
+ * @param url - 下载 URL
+ * @param version - 下载版本号
+ */
+export function startBackgroundDownload(url: string, version: string): void {
+  _downloadState.isDownloading = true
+  _downloadState.progress = 0
+  _downloadState.version = version
+  _downloadState.filePath = ''
+  _downloadState.done = false
+  _downloadState.error = null
+
+  window.electronAPI.invoke('update:start-download', url, version).catch(() => {
+    _downloadState.isDownloading = false
+    _downloadState.error = '启动下载失败'
+  })
 }
