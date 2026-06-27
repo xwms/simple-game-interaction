@@ -13,6 +13,8 @@ files:
   - dist/renderer/**/*
   - resources/icons/**/*
   - package.json
+  - THIRD_PARTY_LICENSES
+  - PRIVACY.md
   - '!**/*.map'
 
 win:

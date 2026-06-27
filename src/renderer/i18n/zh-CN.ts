@@ -52,7 +52,8 @@ export default {
     ipv6NotAvailable: 'IPv6：不可用',
     downloading: '下载中 {progress}%',
     installUpdate: '安装 v{version}',
-    newBadge: '新版本'
+    newBadge: '新版本',
+    updateCheckFailed: '获取更新内容失败'
   },
   host: {
     title: '创建房间',
@@ -173,10 +174,20 @@ export default {
   },
   about: {
     title: '关于',
+    groupDev: '开发者信息',
+    groupLegal: '法律信息',
+    groupSupport: '支持',
     author: '作者',
+    contact: '联系方式',
+    legal: '法律信息',
+    privacy: '隐私说明',
+    oss: '第三方开源许可',
     source: '开源地址',
     copyright: '版权',
-    softwareCopyright: '软著号'
+    softwareCopyright: '软著号',
+    feedback: '意见与 Bug 反馈',
+    feedbackAction: '反馈',
+    faq: '常见问题解答'
   },
   nat: {
     none: '无 NAT（公网 IP）',

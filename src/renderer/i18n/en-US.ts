@@ -52,7 +52,8 @@ export default {
     ipv6NotAvailable: 'IPv6: N/A',
     downloading: 'Downloading {progress}%',
     installUpdate: 'Install v{version}',
-    newBadge: 'NEW'
+    newBadge: 'NEW',
+    updateCheckFailed: 'Failed to fetch update info'
   },
   host: {
     title: 'Host Room',
@@ -173,10 +174,20 @@ export default {
   },
   about: {
     title: 'About',
+    groupDev: 'Developer',
+    groupLegal: 'Legal',
+    groupSupport: 'Support',
     author: 'Author',
+    contact: 'Contact',
+    legal: 'Legal',
+    privacy: 'Privacy Policy',
+    oss: 'Open Source Licenses',
     source: 'Source',
     copyright: 'Copyright',
-    softwareCopyright: 'Software Copyright No.'
+    softwareCopyright: 'Software Copyright No.',
+    feedback: 'Feedback & Bug Report',
+    feedbackAction: 'Feedback',
+    faq: 'FAQ'
   },
   nat: {
     none: 'No NAT (Public IP)',

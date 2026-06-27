@@ -18,46 +18,7 @@ import { version as appVersion } from '../../../package.json'
 import { getCachedUpdate, fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 import type { UpdateCheckData } from '../utils/update-cache'
 
-// Vite ?raw 导入 markdown 文件作为原始字符串
-// @ts-ignore — Vite 处理 ?raw 后缀，TS 类型声明在下方
-import changelogRaw from '../../../CHANGELOG.md?raw'
 
-declare module '*.md?raw' {
-  const content: string
-  export default content
-}
-
-/**
- * 功能描述：从本地 CHANGELOG.md 提取指定版本的更新日志
- *
- * 逻辑说明：在 CHANGELOG 中查找 `## [version]` 段，提取到下一个 `## [` 或 `---` 为止。
- *           版本未指定或找不到时返回首个版本段。
- *
- * @param version - 可选，要查找的版本号（如 "0.0.8"）
- * @returns 匹配版本段的原始 markdown
- */
-function getLocalChangelog(version?: string): string {
-  // 查找指定版本或首个版本段
-  const sectionPattern = version
-    ? new RegExp(`## \\[${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`)
-    : /^## \[/m
-
-  const startMatch = changelogRaw.match(sectionPattern)
-  if (!startMatch) {
-    // 指定版本未找到，回退到首个版本段
-    if (version) return getLocalChangelog()
-    // 一个版本段都没有，返回全部内容前两行（标题）
-    return changelogRaw.split('\n').slice(0, 2).join('\n')
-  }
-
-  const startIdx = startMatch.index!
-  // 从匹配位置之后找下一个版本段或分隔线
-  const remaining = changelogRaw.slice(startIdx + startMatch[0].length)
-  const nextSection = remaining.match(/\n(?:## \[|---\n)/)
-  const endIdx = nextSection ? startIdx + startMatch[0].length + nextSection.index! : changelogRaw.length
-
-  return changelogRaw.slice(startIdx, endIdx)
-}
 
 const router = useRouter()
 const roomStore = useRoomStore()
@@ -75,7 +36,9 @@ const updateStatus = ref<'checking' | 'latest' | 'available' | 'error' | 'downlo
     : 'checking'
 )
 const updateVersion = ref(_cachedInit?.version || '')
-const releaseNotes = ref(_cachedInit?.releaseNotes || getLocalChangelog(currentVersion.value))
+const releaseNotes = ref(_cachedInit?.releaseNotes || '')
+const checkError = ref('')
+
 const updateDownloadUrl = ref(_cachedInit?.downloadUrl || '')
 const updateFilePath = ref(_cachedInit?.installPath || '')
 const downloadedBytes = ref(_cachedInit?.downloadedBytes || 0)
@@ -92,18 +55,18 @@ async function checkUpdate(): Promise<void> {
   }
 
   updateStatus.value = 'checking'
+  checkError.value = ''
   try {
     const data = await fetchUpdate(currentVersion.value)
     if (data) {
       applyUpdateData(data)
     } else {
-      // API 失败时用本地 CHANGELOG 兜底，界面不显示"错误"
-      updateStatus.value = 'latest'
-      releaseNotes.value = getLocalChangelog(currentVersion.value)
+      updateStatus.value = 'error'
+      checkError.value = t('home.updateCheckFailed')
     }
   } catch {
-    updateStatus.value = 'latest'
-    releaseNotes.value = getLocalChangelog(currentVersion.value)
+    updateStatus.value = 'error'
+    checkError.value = t('home.updateCheckFailed')
   }
 }
 
@@ -126,7 +89,7 @@ function applyUpdateData(data: UpdateCheckData): void {
     updateStatus.value = 'latest'
   }
   updateVersion.value = data.version
-  releaseNotes.value = data.releaseNotes || getLocalChangelog(data.version)
+  releaseNotes.value = data.releaseNotes || ''
 }
 
 /**
@@ -271,6 +234,9 @@ onMounted(() => {
         <template v-else-if="updateStatus === 'latest'">
           <span class="inline-flex items-center gap-1">v{{ currentVersion }} · {{ t('home.updateLatest') }}</span>
         </template>
+        <template v-else-if="updateStatus === 'error'">
+          <span class="inline-flex items-center gap-1 text-red-500">{{ checkError || t('home.updateCheckFailed') }}</span>
+        </template>
         <template v-else-if="updateStatus === 'available'">
           v{{ currentVersion }} · <span class="text-primary cursor-pointer hover:underline inline-flex items-center gap-1" @click="handleDownload"><span class="iconfont icon-banbengengxin" />{{ downloadedBytes > 0 ? t('home.updateResume') : t('home.updateAvailable', { version: updateVersion }) }}</span>
         </template>
@@ -293,7 +259,10 @@ onMounted(() => {
           {{ t('home.updateContent', { version: headingVersion }) }}
           <span v-if="updateStatus === 'available' || updateStatus === 'done'" class="ml-1.5 px-2 py-0.5 rounded text-xs leading-none font-bold bg-primary text-white">{{ t('home.newBadge') }}</span>
         </div>
-        <div v-if="renderedNotes" v-html="renderedNotes" class="text-sm leading-relaxed"></div>
+        <div v-if="checkError" class="text-sm text-red-500 flex items-center justify-center py-12">
+          {{ checkError }}
+        </div>
+        <div v-else-if="renderedNotes" v-html="renderedNotes" class="text-sm leading-relaxed"></div>
         <div v-else class="text-sm text-gray-400 flex items-center justify-center py-12">
           {{ t('home.noReleaseNotes') }}
         </div>

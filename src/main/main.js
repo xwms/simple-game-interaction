@@ -25,6 +25,11 @@ if (isDev) {
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 }
 
+// Linux 下禁用 Chromium sandbox（部分系统未启用 user namespace cloning）
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
 /**
  * 功能描述：应用启动入口
  *
