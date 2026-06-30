@@ -15,6 +15,17 @@ export type LogForwarder = (level: LogLevel, message: string, module: string) =>
 
 /** 全局日志转发器列表 */
 const _forwarders: Set<LogForwarder> = new Set()
+/** 生产环境标记 — 由主进程启动时设置 */
+let _isProduction = true
+
+/**
+ * 功能描述：设置生产环境标记，控制 debug 日志是否输出
+ *
+ * @param v - true 为生产环境，debug 日志将被抑制
+ */
+export function setProduction(v: boolean): void {
+  _isProduction = v
+}
 /** 日志文件目录（可选，仅在主进程设置） */
 let _logDir: string | null = null
 
@@ -38,11 +49,7 @@ export function addLogForwarder(forwarder: LogForwarder): () => void {
  * @returns 日期字符串，如 "2026-06-11"
  */
 function getDateStr(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return formatDateStr(new Date())
 }
 
 /**
@@ -84,6 +91,65 @@ function writeToFile(message: string): void {
   }
 }
 
+/**
+ * 功能描述：清理超过指定天数的日志文件
+ *
+ * 逻辑说明：扫描日志目录下所有 YYYY-MM-DD.log 文件，根据文件名日期判断
+ *           是否超过 retentionDays，删除过期文件。字符串比较对 ISO 日期有效。
+ *
+ * @param retentionDays - 保留天数，超过此天数的文件将被删除
+ * @returns 删除的文件数量
+ */
+export function cleanupLogFiles(retentionDays: number): number {
+  if (!_logDir || retentionDays <= 0) return 0
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - retentionDays)
+  const cutoffStr = formatDateStr(cutoff)
+  let deletedCount = 0
+  try {
+    const files = fs.readdirSync(_logDir)
+    for (const file of files) {
+      const m = file.match(/^(\d{4}-\d{2}-\d{2})\.log$/)
+      if (!m) continue
+      if (m[1] < cutoffStr) {
+        fs.unlinkSync(path.join(_logDir, file))
+        deletedCount++
+      }
+    }
+  } catch {
+    // 清理失败不影响程序运行
+  }
+  return deletedCount
+}
+
+/**
+ * 功能描述：删除所有日志文件
+ *
+ * @returns 删除的文件数量
+ */
+export function deleteAllLogFiles(): number {
+  if (!_logDir) return 0
+  let deletedCount = 0
+  try {
+    const files = fs.readdirSync(_logDir)
+    for (const file of files) {
+      if (!/^\d{4}-\d{2}-\d{2}\.log$/.test(file)) continue
+      fs.unlinkSync(path.join(_logDir, file))
+      deletedCount++
+    }
+  } catch {
+    // 清理失败不影响程序运行
+  }
+  return deletedCount
+}
+
+function formatDateStr(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export class Logger {
   private module: string
 
@@ -113,6 +179,7 @@ export class Logger {
   }
 
   debug(message: string, data?: unknown): void {
+    if (_isProduction) return
     this._log('debug', message, data)
   }
 

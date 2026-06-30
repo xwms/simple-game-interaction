@@ -156,6 +156,13 @@ export default {
     bgSet: 'Background image set',
     bgRemoved: 'Background image removed',
     defaultPath: 'Default path',
+    logRetentionDays: 'Log Retention (days)',
+    logRetentionDaysHint: 'Logs older than this will be auto-deleted on startup. 0 = never auto-clean',
+    logCleanupAll: 'Delete All Logs',
+    logCleanupAllConfirm: 'Are you sure you want to delete all log files? This cannot be undone.',
+    logCleanupDone: 'Cleaned up {count} log files',
+    logRetentionChanged: 'Will take effect on next app launch',
+    logRetentionDisabled: 'Auto-cleanup disabled',
     back: 'Back'
   },
   status: {

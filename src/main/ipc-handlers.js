@@ -431,6 +431,18 @@ function registerIpcHandlers() {
     return { success: true }
   })
 
+  ipcMain.handle('log:cleanup', (_event, retentionDays) => {
+    const { cleanupLogFiles } = require('../core/utils/logger')
+    const count = cleanupLogFiles(retentionDays)
+    return { success: true, data: { deletedCount: count } }
+  })
+
+  ipcMain.handle('log:delete-all', () => {
+    const { deleteAllLogFiles } = require('../core/utils/logger')
+    const count = deleteAllLogFiles()
+    return { success: true, data: { deletedCount: count } }
+  })
+
   // ─── 窗口控制 ───────────────────────────────────────
 
   ipcMain.handle('window:minimize', (event) => {

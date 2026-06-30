@@ -20,6 +20,9 @@ export const useSettingsStore = defineStore('settings', () => {
   /** 加入者端自定义本地端口（0 = 自动分配） */
   const localPort = ref(0)
 
+  /** 日志保留天数（启动时自动清理，0 = 不自动清理） */
+  const logRetentionDays = ref(7)
+
   /** 背景图片文件路径（空字符串 = 无背景） */
   const backgroundImage = ref('')
   /** 背景图片遮罩透明度（0-100） */
@@ -65,6 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
         if (data.backgroundImage) backgroundImage.value = data.backgroundImage
         if (data.backgroundOpacity !== undefined) backgroundOpacity.value = data.backgroundOpacity
         if (data.cardOpacity !== undefined) cardOpacity.value = data.cardOpacity
+        if (data.logRetentionDays !== undefined) logRetentionDays.value = data.logRetentionDays
       }
     } catch {
       // 忽略反序列化错误
@@ -87,7 +91,8 @@ export const useSettingsStore = defineStore('settings', () => {
         localPort: localPort.value,
         backgroundImage: backgroundImage.value,
         backgroundOpacity: backgroundOpacity.value,
-        cardOpacity: cardOpacity.value
+        cardOpacity: cardOpacity.value,
+        logRetentionDays: logRetentionDays.value
       })
     )
   }
@@ -136,11 +141,11 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   // 自动保存
-  watch([locale, theme, relayServerUrl, autoUpdateCheck, logFilePath, closeBehavior, localPort, backgroundImage, backgroundOpacity, cardOpacity], save, { deep: true })
+  watch([locale, theme, relayServerUrl, autoUpdateCheck, logFilePath, closeBehavior, localPort, backgroundImage, backgroundOpacity, cardOpacity, logRetentionDays], save, { deep: true })
 
   return {
     locale, theme, relayServerUrl, autoUpdateCheck, logFilePath, closeBehavior, localPort,
-    backgroundImage, backgroundOpacity, backgroundDataUrl, cardOpacity,
+    backgroundImage, backgroundOpacity, backgroundDataUrl, cardOpacity, logRetentionDays,
     setLocale, setTheme, load, save,
     selectBackgroundImage, removeBackgroundImage, loadBackgroundImage
   }

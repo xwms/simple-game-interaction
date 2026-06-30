@@ -48,9 +48,10 @@ if (!gotTheLock) {
   })
 
   function bootstrap() {
-  // 配置日志文件路径
-  const { setLogFilePath } = require('../core/utils/logger')
+  // 配置日志文件路径和级别
+  const { setLogFilePath, setProduction } = require('../core/utils/logger')
   setLogFilePath(path.join(app.getPath('userData'), 'logs', 'app.log'))
+  setProduction(app.isPackaged)
 
   createMenu()
   registerIpcHandlers()

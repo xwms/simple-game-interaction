@@ -156,6 +156,13 @@ export default {
     bgSet: '背景图片已设置',
     bgRemoved: '背景图片已移除',
     defaultPath: '默认路径',
+    logRetentionDays: '日志保留天数',
+    logRetentionDaysHint: '超过此天数的日志将在启动时自动清理，0 表示不自动清理',
+    logCleanupAll: '删除所有日志',
+    logCleanupAllConfirm: '确定要删除所有日志文件吗？此操作不可撤销。',
+    logCleanupDone: '已清理 {count} 个日志文件',
+    logRetentionChanged: '将在下一次启动应用时生效',
+    logRetentionDisabled: '已关闭自动清理',
     back: '返回'
   },
   status: {

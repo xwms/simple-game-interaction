@@ -11,13 +11,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import { useSettingsStore } from '../store/settings'
 import { fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 
 const settings = useSettingsStore()
 const { t } = useI18n()
 const message = useMessage()
+const dialog = useDialog()
 
 /** 本地端口验证状态 */
 const localPortStatus = computed(() => {
@@ -48,6 +49,35 @@ async function handleResetLogDir(): Promise<void> {
   await window.electronAPI.invoke('app:set-log-file-path', null)
   message.success(t('settings.logPathReset'))
 }
+
+/**
+ * 功能描述：删除所有日志文件（弹出确认对话框）
+ */
+function handleDeleteAllLogs(): void {
+  dialog.warning({
+    title: t('settings.logCleanupAll'),
+    content: t('settings.logCleanupAllConfirm'),
+    positiveText: t('common.confirm'),
+    negativeText: t('common.cancel'),
+    positiveButtonProps: { type: 'success' },
+    onPositiveClick: async () => {
+      const result = await window.electronAPI.invoke('log:delete-all')
+      if (result.success) {
+        const count = result.data?.deletedCount ?? 0
+        message.success(t('settings.logCleanupDone', { count }))
+      }
+    }
+  })
+}
+
+// 保留天数变化时提示
+watch(() => settings.logRetentionDays, (days) => {
+  if (days && days > 0) {
+    message.info(t('settings.logRetentionChanged'))
+  } else if (days === 0) {
+    message.info(t('settings.logRetentionDisabled'))
+  }
+})
 
 type UpdateState = 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'done' | 'installing' | 'error'
 
@@ -369,6 +399,20 @@ onMounted(() => {
             <n-button size="small" @click="handleSelectLogDir">{{ t('settings.logFileSelect') }}</n-button>
             <n-button size="small" @click="handleResetLogDir">{{ t('settings.logFileReset') }}</n-button>
           </div>
+        </div>
+
+        <div class="pt-2">
+          <label class="block text-sm text-gray-500 mb-2 flex items-center gap-1.5">
+            {{ t('settings.logRetentionDays') }}
+          </label>
+          <n-input-number v-model:value="settings.logRetentionDays" :min="0" :max="365" class="w-28" @blur="() => { if (settings.logRetentionDays === null || settings.logRetentionDays === undefined) settings.logRetentionDays = 0 }" />
+          <p class="text-xs text-gray-400 mt-1">{{ t('settings.logRetentionDaysHint') }}</p>
+        </div>
+
+        <div class="pt-2">
+          <n-button size="small" type="error" quaternary @click="handleDeleteAllLogs">
+            {{ t('settings.logCleanupAll') }}
+          </n-button>
         </div>
       </div>
     </div>

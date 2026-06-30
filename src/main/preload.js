@@ -61,6 +61,8 @@ const CHANNEL_WHITELIST = [
   // 日志
   'log:info',
   'log:error',
+  'log:cleanup',
+  'log:delete-all',
 
   // 通用
   'app:get-version',

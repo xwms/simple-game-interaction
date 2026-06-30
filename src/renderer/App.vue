@@ -90,6 +90,11 @@ onMounted(() => {
   // 同步关闭行为设置到主进程
   window.electronAPI.invoke('app:set-close-behavior', settings.closeBehavior)
 
+  // 启动时按配置的天数清理旧日志
+  if (settings.logRetentionDays > 0) {
+    window.electronAPI.invoke('log:cleanup', settings.logRetentionDays).catch(() => {})
+  }
+
   // ─── 后台下载持久监听器 ─────────────────────────────
   window.electronAPI.on('update:download-progress', (percent: unknown) => {
     downloadState.progress = percent as number
