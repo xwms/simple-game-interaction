@@ -234,7 +234,6 @@ export class LocalTunnelServer extends EventEmitter {
       logger.debug(`Remote data arrived but no clients connected, dropping ${data.length}B`)
       return
     }
-    // 记录数据前 4 字节（hex）用于识别 Minecraft 协议包
     const hexPrefix = data.length >= 4 ? data.subarray(0, 4).toString('hex') : data.toString('hex')
     logger.debug(`Writing to ${clientCount} clients, data=${data.length}B, hex=${hexPrefix}`)
     for (const socket of this._clientConnections) {

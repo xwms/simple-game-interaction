@@ -392,15 +392,8 @@ export class RelayClient extends EventEmitter {
     if (typeof event.data === 'string') {
       this._handleTextMessage(event.data)
     } else {
-      // Windows 下 ws 包可能将文本帧以 Buffer 交付
-      const raw = event.data as Buffer
-      const text = raw.toString('utf8')
-      try {
-        JSON.parse(text)
-        this._handleTextMessage(text)
-      } catch {
-        this._handleBinaryData(raw)
-      }
+      // ws 库自动根据 WebSocket opcode 区分：文本帧 → string，二进制帧 → Buffer
+      this._handleBinaryData(event.data as Buffer)
     }
   }
 
@@ -500,18 +493,8 @@ export class RelayClient extends EventEmitter {
 
       payload = innerData.subarray(BINARY_FRAME_HEADER_SIZE, BINARY_FRAME_HEADER_SIZE + payloadLen)
     } else {
-      // 加入者端：[4B payloadLen][payload]
-      if (raw.length < BINARY_FRAME_HEADER_SIZE) {
-        logger.warn(`Received undersized binary frame: ${raw.length} bytes`)
-        return
-      }
-      const payloadLen = raw.readUInt32BE(0)
-      // 中继服务器可能不添加 4B 长度头部，检测超界时使用整个消息体
-      if (BINARY_FRAME_HEADER_SIZE + payloadLen > raw.length) {
-        payload = raw
-      } else {
-        payload = raw.subarray(BINARY_FRAME_HEADER_SIZE, BINARY_FRAME_HEADER_SIZE + payloadLen)
-      }
+      // 加入者端：中继服务器转发时去掉了所有前缀，只发送原始 payload
+      payload = raw
     }
 
     this._trafficBytesReceived += payload.length

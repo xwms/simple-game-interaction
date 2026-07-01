@@ -8,7 +8,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { RelayClient } from '../../../src/core/tunnel/relay-client'
 import type { RelayConfig } from '../../../src/core/tunnel/types'
-import { WebSocketServer } from 'ws'
+import { RELAY_MESSAGE_TYPES } from '../../../src/core/tunnel/types'
+import { WebSocketServer, WebSocket } from 'ws'
 import * as net from 'net'
 import type { AddressInfo } from 'net'
 
@@ -22,6 +23,8 @@ describe('RelayClient 协议实现', () => {
   let allReceived: Array<string | Buffer> = []
   /** 服务器是否应主动关闭连接 */
   let shouldCloseOnOpen = false
+  /** 服务端到客户端的连接引用（用于向客户端发送数据） */
+  let clientWs: WebSocket | null = null
 
   beforeEach(async () => {
     shouldCloseOnOpen = false
@@ -64,6 +67,7 @@ describe('RelayClient 协议实现', () => {
 
     // 让服务器记录收到的消息
     server.on('connection', (ws) => {
+      clientWs = ws
       if (shouldCloseOnOpen) {
         ws.close()
         return
@@ -354,4 +358,120 @@ describe('RelayClient 协议实现', () => {
     expect(disconnected).toBe(false)
     expect(client.state).toBe('connected')
   }, 10000) // 10s timeout
+
+  // ─── 消息路由测试 ─────────────────────────────────────────
+
+  it('收到文本帧（JSON 控制消息）应触发对应事件', async () => {
+    await startClient()
+
+    const eventPromise = new Promise<any>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for member-joined')), 2000)
+      client.on(RELAY_MESSAGE_TYPES.MEMBER_JOINED, (data) => {
+        clearTimeout(timer)
+        resolve(data)
+      })
+    })
+
+    clientWs!.send(JSON.stringify({
+      type: RELAY_MESSAGE_TYPES.MEMBER_JOINED,
+      data: { memberId: 'test-1', memberName: 'TestPlayer', networkInfo: null }
+    }))
+
+    const event = await eventPromise
+    expect(event.memberId).toBe('test-1')
+    expect(event.memberName).toBe('TestPlayer')
+  })
+
+  it('收到二进制帧（游戏数据）应发射 RELAY_DATA', async () => {
+    await startClient()
+
+    const dataPromise = new Promise<Buffer>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for RELAY_DATA')), 2000)
+      client.on(RELAY_MESSAGE_TYPES.RELAY_DATA, (payload: Buffer) => {
+        clearTimeout(timer)
+        resolve(payload)
+      })
+    })
+
+    const gameData = Buffer.from([0x10, 0x20, 0x30, 0x40, 0x50])
+    clientWs!.send(gameData)
+
+    const payload = await dataPromise
+    expect(payload).toEqual(gameData)
+  })
+
+  it('二进制帧内容恰好为合法 JSON 时不应被误判为文本消息', async () => {
+    await startClient()
+
+    const relayDataPromise = new Promise<Buffer>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out — data was misrouted as text')), 2000)
+      client.on(RELAY_MESSAGE_TYPES.RELAY_DATA, (payload: Buffer) => {
+        clearTimeout(timer)
+        resolve(payload)
+      })
+    })
+
+    // 游戏数据恰好以 { 开头且可被 JSON.parse
+    const jsonLikeData = Buffer.from('{"type":"game","cmd":"move","x":1}')
+    clientWs!.send(jsonLikeData)
+
+    const payload = await relayDataPromise
+    expect(payload).toEqual(jsonLikeData)
+  })
+
+  it('极小二进制帧（1-3 字节）应正确转发', async () => {
+    await startClient()
+
+    const dataPromise = new Promise<Buffer>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for small RELAY_DATA')), 2000)
+      client.on(RELAY_MESSAGE_TYPES.RELAY_DATA, (payload: Buffer) => {
+        clearTimeout(timer)
+        resolve(payload)
+      })
+    })
+
+    // 模拟任意游戏协议中的小包（如 keep-alive / ack）
+    clientWs!.send(Buffer.from([0x00, 0x01, 0x02]))
+
+    const payload = await dataPromise
+    expect(payload.length).toBe(3)
+    expect(payload).toEqual(Buffer.from([0x00, 0x01, 0x02]))
+  })
+
+  it('文本帧与二进制帧交替到达时路由应正确', async () => {
+    await startClient()
+
+    const textEvents: any[] = []
+    const binaryEvents: Buffer[] = []
+
+    client.on(RELAY_MESSAGE_TYPES.MEMBER_JOINED, (data) => textEvents.push(data))
+    client.on(RELAY_MESSAGE_TYPES.RELAY_DATA, (data: Buffer) => binaryEvents.push(data))
+
+    // 1. 控制消息
+    clientWs!.send(JSON.stringify({
+      type: RELAY_MESSAGE_TYPES.MEMBER_JOINED,
+      data: { memberId: 'p1', memberName: 'P1', networkInfo: null }
+    }))
+    await new Promise(r => setTimeout(r, 50))
+
+    // 2. 游戏数据
+    clientWs!.send(Buffer.from([0x01, 0x02, 0x03]))
+    await new Promise(r => setTimeout(r, 50))
+
+    // 3. 控制消息
+    clientWs!.send(JSON.stringify({
+      type: RELAY_MESSAGE_TYPES.MEMBER_JOINED,
+      data: { memberId: 'p2', memberName: 'P2', networkInfo: null }
+    }))
+    await new Promise(r => setTimeout(r, 50))
+
+    // 4. 游戏数据
+    clientWs!.send(Buffer.from([0x04, 0x05]))
+    await new Promise(r => setTimeout(r, 50))
+
+    expect(textEvents.length).toBe(2)
+    expect(binaryEvents.length).toBe(2)
+    expect(binaryEvents[0]).toEqual(Buffer.from([0x01, 0x02, 0x03]))
+    expect(binaryEvents[1]).toEqual(Buffer.from([0x04, 0x05]))
+  })
 })
