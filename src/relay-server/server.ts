@@ -272,7 +272,14 @@ export class RelayServer {
     if (!state) return
 
     // 限流检查（每连接每秒消息数）
-    if (!this._consumeToken(state.id)) return
+    if (!this._consumeToken(state.id)) {
+      console.log(JSON.stringify({
+        time: nowISO(), level: 'warn', module: 'rate-limit',
+        msg: 'Message rate limit exceeded, dropping', ip: state.ip,
+        memberId: state.memberId || 'unauthed', messageCount: state.messageCount
+      }))
+      return
+    }
 
     state.lastActivity = Date.now()
     state.alive = true
@@ -731,6 +738,22 @@ export class RelayServer {
         type: RELAY_MESSAGE_TYPES.SIGNAL,
         data: { from: state.memberId, signalData }
       })
+      console.log(JSON.stringify({
+        time: nowISO(), level: 'info', module: 'signal',
+        msg: 'Signal forwarded', from: state.memberId, to: targetId,
+        signalType: (signalData as Record<string, unknown>)?.type ?? 'unknown'
+      }))
+    } else {
+      const reason = !targetWs ? 'target not found in member map'
+        : targetWs.readyState === WebSocket.CONNECTING ? 'target still connecting'
+        : targetWs.readyState === WebSocket.CLOSING ? 'target is closing'
+        : targetWs.readyState === WebSocket.CLOSED ? 'target already closed'
+        : 'unknown'
+      console.log(JSON.stringify({
+        time: nowISO(), level: 'warn', module: 'signal',
+        msg: 'Signal dropped: ' + reason, from: state.memberId, to: targetId,
+        signalType: (signalData as Record<string, unknown>)?.type ?? 'unknown'
+      }))
     }
   }
 

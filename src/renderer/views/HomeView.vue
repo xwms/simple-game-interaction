@@ -18,8 +18,6 @@ import { version as appVersion } from '../../../package.json'
 import { getCachedUpdate, fetchUpdate, getDownloadState, startBackgroundDownload } from '../utils/update-cache'
 import type { UpdateCheckData } from '../utils/update-cache'
 
-
-
 const router = useRouter()
 const roomStore = useRoomStore()
 const { status, result, refresh } = useNetworkDetect()
@@ -76,18 +74,22 @@ async function checkUpdate(): Promise<void> {
  * @param data - 更新检查返回的数据
  */
 function applyUpdateData(data: UpdateCheckData): void {
-  if (data.hasUpdate) {
+  if (!data.hasUpdate) {
+    updateStatus.value = 'latest'
+    return
+  }
+
+  // 下载进行中或已完成，不覆盖状态
+  if (updateStatus.value !== 'downloading' && updateStatus.value !== 'done') {
     if (data.installAvailable) {
       updateStatus.value = 'done'
       if (data.installPath) updateFilePath.value = data.installPath
     } else {
       updateStatus.value = 'available'
     }
-    updateDownloadUrl.value = data.downloadUrl || ''
-    downloadedBytes.value = data.downloadedBytes || 0
-  } else {
-    updateStatus.value = 'latest'
   }
+  updateDownloadUrl.value = data.downloadUrl || ''
+  downloadedBytes.value = data.downloadedBytes || 0
   updateVersion.value = data.version
   releaseNotes.value = data.releaseNotes || ''
 }
@@ -146,15 +148,15 @@ const renderedNotes = computed(() => {
 })
 
 onMounted(() => {
-  setTimeout(checkUpdate, 3000)
-})
-
-// 如果返回首页时后台下载已完成，同步状态
-onMounted(() => {
+  // 恢复后台下载状态（全局状态 persist，本地 updateStatus 从缓存恢复可能不一致）
   if (downloadState.done) {
     updateFilePath.value = downloadState.filePath
     updateStatus.value = 'done'
+  } else if (downloadState.isDownloading) {
+    updateStatus.value = 'downloading'
   }
+
+  setTimeout(checkUpdate, 3000)
 })
 </script>
 

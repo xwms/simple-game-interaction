@@ -180,6 +180,7 @@ export class TunnelManager extends EventEmitter {
           // 优先使用信号中携带的公网 IP（加入者 STUN 结果），
           // 降级到 member-joined 时的 networkInfo
           const clientPublicIp = (sig.publicIp as string) || this._clientNetworkInfos.get(data.from)?.ipv4.publicIp
+          logger.debug(`[KCP] Received kcp-port signal: member=${data.from}, kcpPort=${sig.kcpPort}, publicIp=${clientPublicIp}, localPort=${kcp.localPort}`)
           if (clientPublicIp) {
             logger.info(`KCP external probe triggered: member ${data.from} public ${clientPublicIp}:${sig.kcpPort}`)
             kcp.addExternalTarget(clientPublicIp, sig.kcpPort)
@@ -362,12 +363,18 @@ export class TunnelManager extends EventEmitter {
       this._serverNetwork = joinResult.serverNetworkInfo || null
       this._clientPeerInfo = this._buildPeerInfo(joinResult.serverNetworkInfo || this._serverNetwork)
 
-      // 应用在 joinRoom 响应返回前已到达的信号（房主迅速创建 P2P/IPv6 通道并发出 Signal）
-      for (const sig of earlySignals) {
-        if (sig.from !== joinResult.serverId) continue
-        const data = sig.signalData as Record<string, unknown>
-        if (data?.type === 'p2p-address' && typeof data.port === 'number') {
-          if (this._clientPeerInfo) {
+      /**
+       * 功能描述：将 earlySignals 中来自房主的地址信号应用到 _clientPeerInfo
+       *
+       * 逻辑说明：遍历缓冲队列，更新 P2P/IPv6/KCP 地址。幂等操作，
+       *           可在不同阶段多次调用（首次回放 joinRoom 期间到达的信号，
+       *           二次回放 _waitFor* 超时后到达的信号）。
+       */
+      const applyAddressSignals = (): void => {
+        for (const sig of earlySignals) {
+          if (sig.from !== serverId) continue
+          const data = sig.signalData as Record<string, unknown>
+          if (data?.type === 'p2p-address' && typeof data.port === 'number' && this._clientPeerInfo) {
             if (data.ip && typeof data.ip === 'string') {
               this._clientPeerInfo.publicAddress = { ip: data.ip, port: data.port }
             }
@@ -376,34 +383,26 @@ export class TunnelManager extends EventEmitter {
                 ip, port: data.port as number
               }))
             }
-            // 用信号中携带的真实 NAT 信息覆盖 joinResult 中的 unknown 值
             if (typeof data.natType === 'string' && typeof data.mappingBehavior === 'string' && this._serverNetwork) {
               this._serverNetwork.ipv4.natType = data.natType as NatType
               this._serverNetwork.ipv4.mappingBehavior = data.mappingBehavior as MappingBehavior
               if (typeof data.filteringBehavior === 'string') {
                 this._serverNetwork.ipv4.filteringBehavior = data.filteringBehavior as FilteringBehavior
               }
-              logger.info(`Server NAT info applied from signal: ${data.natType}/${data.mappingBehavior}`)
             }
-            logger.info(`Pre-received P2P address signal`)
           }
-        }
-        if (data?.type === 'ipv6-address' && typeof data.address === 'string' && typeof data.port === 'number') {
-          if (this._clientPeerInfo) {
+          if (data?.type === 'ipv6-address' && typeof data.address === 'string' && typeof data.port === 'number' && this._clientPeerInfo) {
             this._clientPeerInfo.ipv6Address = data.address
             this._clientPeerInfo.ipv6Port = data.port
-            const v6PreInfo = process.env.NODE_ENV !== 'production' ? ` [${data.address}]:${data.port}` : ''
-            logger.info(`Pre-received IPv6 address signal${v6PreInfo}`)
           }
-        }
-        if (data?.type === 'kcp-address' && typeof data.ip === 'string' && typeof data.port === 'number') {
-          if (this._clientPeerInfo) {
+          if (data?.type === 'kcp-address' && typeof data.ip === 'string' && typeof data.port === 'number' && this._clientPeerInfo) {
             this._clientPeerInfo.kcpAddress = { ip: data.ip, port: data.port }
-            const kcpPreInfo = process.env.NODE_ENV !== 'production' ? ` [${data.ip}]:${data.port}` : ''
-            logger.info(`Pre-received KCP address signal${kcpPreInfo}`)
           }
         }
       }
+
+      // 首次回放：joinRoom 期间到达的信号
+      applyAddressSignals()
 
       // 3.5 根据自身网络能力按需等待信号（IPv6/P2P 不可用时无需等待）
       // IPv6 条件与 path-selector 一致: 双方 hasPublicV6 均 true 时路径才会包含 IPv6
@@ -420,6 +419,9 @@ export class TunnelManager extends EventEmitter {
       logger.debug(`[Signal] Waiting for signals — IPv6: ${!!(serverV6?.hasPublicV6 && clientV6.hasPublicV6)}, P2P/KCP: ${this._clientNetwork!.ipv4.publicIp !== ''}`)
       await Promise.all(signalWaits)
       logger.info('Address signal collection complete, starting path selection')
+
+      // 二次回放：_waitFor* 超时后才到达的信号（如 STUN > 1500ms 的 kcp-address）
+      applyAddressSignals()
     } finally {
       this._relayClient.removeListener('signal', onEarlySignal)
     }
@@ -641,15 +643,28 @@ export class TunnelManager extends EventEmitter {
 
       if (hasUdp) {
         const kcp = new KcpTransport()
-        kcp.setRole('passive')
-        await kcp.connect({ peerId: memberId })
+        // 双方同时主动打洞 — 参考 EasyTier/frp 的双向主动连接
+        // 房主也主动向加入者发送探针，提前在 NAT 上建立端口映射
+        kcp.setRole('active')
+        kcp.connect({
+          peerId: memberId,
+          publicAddress: clientNetwork.ipv4.publicIp
+            ? { ip: clientNetwork.ipv4.publicIp, port: clientNetwork.ipv4.publicPort }
+            : undefined,
+          localAddresses: clientNetwork.ipv4.localAddresses.length > 0
+            ? clientNetwork.ipv4.localAddresses.map(ip => ({ ip, port: clientNetwork.ipv4.publicPort }))
+            : []
+        }).catch((err: Error) => {
+          logger.debug(`KCP host active probe ended (member ${memberId}): ${err.message}`)
+        }) // 不 await — 后台探测，立即注册信号处理器
 
-        // KCP connect 已立即返回（bound 不等待 STUN），
-        // 等待 public-addr 事件获得公网地址后发送 KCP 地址信号
-        const sendKcpAddress = (): void => {
+        // 不 await connect，此处 kcp.connect 正在后台执行（UDP 绑定 + STUN），
+        // 注册 public-addr 监听在 STUN 完成后发送 KCP 地址信号
+        const sendKcpAddress = (fromStun: boolean = false): void => {
           const ip = kcp.publicIp || this._serverNetwork?.ipv4.publicIp
           const port = kcp.publicPort || kcp.localPort
           if (ip && port) {
+            logger.debug(`[KCP] Sending kcp-address signal: member=${memberId}, ip=${ip}, port=${port}, source=${fromStun ? 'STUN' : 'fallback'}`)
             this._relayClient.sendSignal(memberId, {
               type: 'kcp-address',
               ip,
@@ -660,9 +675,9 @@ export class TunnelManager extends EventEmitter {
           }
         }
         // STUN 完成后发送（优先），未完成时用本地地址兜底
-        kcp.on('public-addr', sendKcpAddress)
+        kcp.on('public-addr', () => sendKcpAddress(true))
         // 兜底：STUN 超时/失败时 publicPort 被设为 localPort，setTimeout 确保在其之后执行
-        setTimeout(sendKcpAddress, 3500)
+        setTimeout(() => sendKcpAddress(false), 3500)
 
         // 注册 KCP 传输实例，使 kcp-port 信号处理器能触发外部探针
         this._clientKcpTransports.set(memberId, kcp)
@@ -1099,6 +1114,7 @@ export class TunnelManager extends EventEmitter {
       // 房主尽早开始探测建立 NAT 映射；STUN 公网地址发现后更新
       kcp.on('bound', (localPort: number) => {
         const publicIp = this._clientNetwork?.ipv4.publicIp || ''
+        logger.debug(`[KCP] Sending kcp-port signal: localPort=${localPort}, publicIp=${publicIp}`)
         this._relayClient.sendSignal(this._serverMemberId, {
           type: 'kcp-port',
           kcpPort: localPort,
@@ -1109,6 +1125,7 @@ export class TunnelManager extends EventEmitter {
       })
       kcp.on('public-addr', (pubPort: number, pubIp: string | null) => {
         const publicIp = pubIp || this._clientNetwork?.ipv4.publicIp || ''
+        logger.debug(`[KCP] Sending kcp-port UPDATE signal: pubPort=${pubPort}, publicIp=${publicIp}`)
         this._relayClient.sendSignal(this._serverMemberId, {
           type: 'kcp-port',
           kcpPort: pubPort,

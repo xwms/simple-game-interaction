@@ -303,7 +303,7 @@ export class KcpTransport extends EventEmitter implements Transport {
               const warnInfo = process.env.NODE_ENV !== 'production'
                 ? ` (target=${targetAddr.ip}:${targetAddr.port})` : ''
               reject(new Error(`UDP hole punching handshake timeout, no response from peer${warnInfo}`))
-            }, 2500)
+            }, 8000)
           } else {
             logger.info(`KCP passive mode ready (${totalSockets} sockets)`)
             resolve()
@@ -582,11 +582,14 @@ export class KcpTransport extends EventEmitter implements Transport {
   private _onMessage(msg: Buffer, rinfo: dgram.RemoteInfo, socketIndex: number): void {
     // 过滤 STUN 响应
     if (msg.length >= 20 && msg.readUInt16BE(0) === 0x0101 && msg.readUInt32BE(4) === 0x2112a442) {
+      logger.debug(`KCP STUN response received from ${rinfo.address}:${rinfo.port}`)
       return
     }
 
     // 过滤探针包：仅连接建立后过滤，否则会误杀对端的合法探针
-    if (this._connectionEstablished && msg.length >= PROBE_MAGIC.length && msg[0] === PROBE_MAGIC[0] && msg[1] === PROBE_MAGIC[1]) {
+    const isProbe = msg.length >= PROBE_MAGIC.length && msg[0] === PROBE_MAGIC[0] && msg[1] === PROBE_MAGIC[1]
+    if (isProbe && this._connectionEstablished) {
+      logger.debug(`KCP probe filtered (connected), from=${rinfo.address}:${rinfo.port}`)
       return
     }
 
@@ -595,6 +598,8 @@ export class KcpTransport extends EventEmitter implements Transport {
 
     // 首包处理（连接建立前收到的第一个非 STUN 包）
     if (!this._connectionEstablished && this._status === 'connecting' && !this._kcp) {
+      const packetType = isProbe ? 'probe' : 'KCP data'
+      logger.info(`KCP ${this._role} first packet from ${rinfo.address}:${rinfo.port} (type=${packetType}, socket[${socketIndex}])`)
       this._connectionEstablished = true
       this._primarySocketIndex = socketIndex
 
@@ -612,6 +617,15 @@ export class KcpTransport extends EventEmitter implements Transport {
         }
         this._clearHandshake()
         logger.info(`KCP connection established (handshake confirmed, ${rinfo.address}:${rinfo.port}, socket[${socketIndex}])`)
+        // Send ACK so the peer's active connect() resolves immediately
+        try {
+          const socket = this._udpSockets[this._primarySocketIndex]
+          if (socket) {
+            socket.send(Buffer.alloc(1), 0, 1, rinfo.port, rinfo.address)
+          }
+        } catch {
+          logger.warn('KCP active send ACK failed')
+        }
         return
       }
 

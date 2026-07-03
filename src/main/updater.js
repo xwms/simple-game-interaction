@@ -364,16 +364,14 @@ function downloadUpdate(downloadUrl, destPath, onProgress, redirectCount) {
 
     const client = downloadUrl.startsWith('https') ? https : http
 
-    // 检查是否存在部分下载的文件，用于断点续传（仅首次请求）
+    // 检查是否存在部分下载的文件，用于断点续传
     let existingSize = 0
-    if (redirectCount === 0) {
-      try {
-        const stat = fs.statSync(destPath)
-        if (stat.isFile() && stat.size > 0) {
-          existingSize = stat.size
-        }
-      } catch { /* 文件不存在，从头下载 */ }
-    }
+    try {
+      const stat = fs.statSync(destPath)
+      if (stat.isFile() && stat.size > 0) {
+        existingSize = stat.size
+      }
+    } catch { /* 文件不存在，从头下载 */ }
 
     const options = {
       headers: {
@@ -538,16 +536,16 @@ async function installUpdate(filePath) {
   const ext = path.extname(filePath).toLowerCase()
 
   if (ext === '.exe') {
-    // 使用 shell.openPath 启动（利用 Windows ShellExecuteEx 绕过 job object）
-    // Electron 主进程受 Chromium Job Object 限制，spawn/execFile 无法创建独立 GUI 窗口
+    // 使用 spawn + detached + shell 绕过 Chromium Job Object 限制
+    // 传入 --updated 告诉 NSIS 这是更新（自动读取注册表中的上次安装路径）
     console.log(`[updater] 启动安装: ${filePath}`)
     try {
-      const error = await shell.openPath(filePath)
-      if (error) {
-        console.error(`[updater] 安装失败: ${error}`)
-      } else {
-        console.log('[updater] 安装进程已启动，退出应用...')
-      }
+      spawn(filePath, ['--updated'], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true
+      }).unref()
+      console.log('[updater] 安装进程已启动，退出应用...')
     } catch (err) {
       console.error(`[updater] 安装异常: ${err.message}`)
     }
