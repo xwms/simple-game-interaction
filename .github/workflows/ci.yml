@@ -117,6 +117,7 @@ jobs:
 
       - name: Sync to Gitee release
         env:
+          GH_TOKEN: ${{ github.token }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
