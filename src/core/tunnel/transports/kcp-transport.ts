@@ -832,7 +832,7 @@ export class KcpTransport extends EventEmitter implements Transport {
       const elapsed = Date.now() - this._lastReceiveTime
       if (elapsed > IDLE_TIMEOUT) {
         logger.warn(`KCP idle timeout: ${elapsed}ms without any data`)
-        this._lastReceiveTime = Date.now() // 防止重复触发
+        this._stopIdleCheck()
         this._setStatus('error')
         this.emit(TRANSPORT_EVENTS.ERROR, new Error(`KCP connection idle timeout (${IDLE_TIMEOUT / 1000}s)`))
       }
