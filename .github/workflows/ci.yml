@@ -173,9 +173,9 @@ jobs:
 
           # 6. 上传安装包
           if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ] && [ "${EXISTING_ID}" != "0" ]; then
-            echo "Uploading ${WIN_ASSET}..."
-            curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${EXISTING_ID}/attach_files?access_token=${GITEE_TOKEN}" \
-              -F "file=@/tmp/${WIN_ASSET}" > /dev/null
+            echo "Uploading ${WIN_ASSET} (this may take a few minutes)..."
+            curl -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${EXISTING_ID}/attach_files?access_token=${GITEE_TOKEN}" \
+              -F "file=@/tmp/${WIN_ASSET}" --max-time 600 > /dev/null
             echo "Upload complete"
           fi
 
