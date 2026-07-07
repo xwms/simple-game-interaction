@@ -417,8 +417,17 @@ function downloadUpdate(downloadUrl, destPath, onProgress, redirectCount) {
 
       // append 模式写入（续传时不覆盖已有内容）
       const writeStream = fs.createWriteStream(destPath, { flags: existingSize > 0 ? 'a' : 'w' })
+      let streamDestroyed = false
+
+      // 写入流出错时标记并终止下载
+      writeStream.on('error', (err) => {
+        streamDestroyed = true
+        res.destroy()
+        reject(err)
+      })
 
       res.on('data', (chunk) => {
+        if (streamDestroyed || writeStream.destroyed) return
         downloadedSize += chunk.length
         writeStream.write(chunk)
 
@@ -432,13 +441,17 @@ function downloadUpdate(downloadUrl, destPath, onProgress, redirectCount) {
       })
 
       res.on('end', () => {
-        writeStream.end()
+        if (!streamDestroyed && !writeStream.destroyed) {
+          writeStream.end()
+        }
         onProgress(100)
         resolve(destPath)
       })
 
       res.on('error', (err) => {
-        writeStream.destroy()
+        if (!streamDestroyed) {
+          writeStream.destroy()
+        }
         reject(err)
       })
     }).on('error', reject)
