@@ -123,20 +123,11 @@ jobs:
         run: |
           echo "Syncing ${TAG} to Gitee..."
 
-          # 1. 查找 Windows 安装包
-          WIN_ASSET=$(gh release view "${TAG}" --json assets \
-            -q '.assets[] | select(.name | endswith(".exe") and contains("Setup") and (contains("blockmap") | not)) | .name' | head -1)
-          if [ -z "${WIN_ASSET}" ]; then echo "No Windows installer, skipping"; exit 0; fi
-          echo "Asset: ${WIN_ASSET}"
-
-          # 2. 下载安装包
-          gh release download "${TAG}" --pattern "${WIN_ASSET}" --output "/tmp/${WIN_ASSET}" --clobber
-
-          # 3. 获取 release body（截断到 5000 字符）
+          # 获取 release body（截断到 5000 字符）
           BODY=$(gh release view "${TAG}" --json body -q '.body' | head -c 5000)
           export BODY
 
-          # 4. 查询 Gitee 已有 release
+          # 2. 查询 Gitee 已有 release
           EXISTING_ID=$(curl -s "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases?access_token=${GITEE_TOKEN}&per_page=100" \
             | node -e "
               const d=[]; process.stdin.on('data',c=>d.push(c));
@@ -147,7 +138,7 @@ jobs:
               })
             ")
 
-          # 5. 创建或更新 release
+          # 3. 创建或更新 release
           CREATE_BODY=$(node -e "
             const tag = process.env.TAG;
             console.log(JSON.stringify({
@@ -171,13 +162,13 @@ jobs:
             echo "Created id=${EXISTING_ID}"
           fi
 
-          # 6. 上传安装包
-          if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ] && [ "${EXISTING_ID}" != "0" ]; then
-            echo "Uploading ${WIN_ASSET} (this may take a few minutes)..."
-            curl -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${EXISTING_ID}/attach_files?access_token=${GITEE_TOKEN}" \
-              -F "file=@/tmp/${WIN_ASSET}" --max-time 600 > /dev/null
-            echo "Upload complete"
-          fi
+          # 6. 上传安装包（手动上传，CI 跨国上传太慢）
+          # if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "null" ] && [ "${EXISTING_ID}" != "0" ]; then
+          #   echo "Uploading ${WIN_ASSET} (this may take a few minutes)..."
+          #   curl -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases/${EXISTING_ID}/attach_files?access_token=${GITEE_TOKEN}" \
+          #     -F "file=@/tmp/${WIN_ASSET}" --max-time 600 > /dev/null
+          #   echo "Upload complete"
+          # fi
 
-          rm -f "/tmp/${WIN_ASSET}"
+          # rm -f "/tmp/${WIN_ASSET}"
           echo "Gitee sync done"
