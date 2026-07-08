@@ -70,8 +70,8 @@ export const useSettingsStore = defineStore('settings', () => {
         if (data.cardOpacity !== undefined) cardOpacity.value = data.cardOpacity
         if (data.logRetentionDays !== undefined) logRetentionDays.value = data.logRetentionDays
       }
-    } catch {
-      // 忽略反序列化错误
+    } catch (err) {
+      console.warn('[settings] 反序列化失败:', err)
     }
   }
 
@@ -108,8 +108,8 @@ export const useSettingsStore = defineStore('settings', () => {
         backgroundImage.value = data.path
         backgroundDataUrl.value = data.dataUrl
       }
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.warn('[settings] 选择背景图片失败:', err)
     }
   }
 
@@ -135,7 +135,8 @@ export const useSettingsStore = defineStore('settings', () => {
         // 文件不存在或无法读取，清空
         backgroundImage.value = ''
       }
-    } catch {
+    } catch (err) {
+      console.warn('[settings] 加载背景图片失败:', err)
       backgroundImage.value = ''
     }
   }

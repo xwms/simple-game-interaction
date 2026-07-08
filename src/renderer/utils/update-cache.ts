@@ -63,8 +63,8 @@ export async function fetchUpdate(currentVersion?: string): Promise<UpdateCheckD
       setCachedUpdate(data)
       return data
     }
-  } catch {
-    // 调用失败
+  } catch (err) {
+    console.warn('[update-cache] 检查更新失败:', err)
   }
   return null
 }

@@ -8,11 +8,33 @@
  * @module port-checker
  */
 
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
 import * as net from 'net'
 
-const execAsync = promisify(exec)
+/**
+ * 功能描述：执行子进程并获取 stdout
+ *
+ * 逻辑说明：使用 spawn 替代 exec/execAsync 避免 shell 命令注入风险。
+ *           不经过 shell 解释，参数以数组形式传递。
+ *
+ * @param cmd - 可执行文件路径
+ * @param args - 参数列表
+ * @param timeout - 超时时间（毫秒）
+ * @returns stdout 内容
+ * @throws 进程退出码非零或超时
+ */
+function spawnOutput(cmd: string, args: string[], timeout: number = 3000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { timeout, stdio: ['ignore', 'pipe', 'ignore'] })
+    let stdout = ''
+    child.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout)
+      else reject(new Error(`exit code ${code}`))
+    })
+  })
+}
 
 /** 端口检测结果 */
 export interface PortCheckResult {
@@ -97,10 +119,7 @@ async function _findProcessByPort(
 
   try {
     if (platform === 'win') {
-      const { stdout } = await execAsync(
-        `netstat -ano | findstr :${port}`,
-        { timeout: 3000 }
-      )
+      const stdout = await spawnOutput('netstat', ['-ano'])
 
       for (const line of stdout.split('\n')) {
         if (line.includes(`:${port}`) && line.toLowerCase().includes(protocol)) {
@@ -115,18 +134,10 @@ async function _findProcessByPort(
       // Linux/macOS 优先使用 lsof，失败时回退到 ss（Ubuntu 默认无 lsof）
       let stdout = ''
       try {
-        const result = await execAsync(
-          `lsof -i ${protocol}:${port} -P -n 2>/dev/null`,
-          { timeout: 3000 }
-        )
-        stdout = result.stdout
+        stdout = await spawnOutput('lsof', ['-i', `${protocol}:${port}`, '-P', '-n'])
       } catch {
         try {
-          const result = await execAsync(
-            `ss -tlnp sport = :${port} 2>/dev/null`,
-            { timeout: 3000 }
-          )
-          stdout = result.stdout
+          stdout = await spawnOutput('ss', ['-tlnp', 'sport', `= :${port}`])
         } catch {
           return null
         }
@@ -219,10 +230,7 @@ async function findPortsByPid(pid: number): Promise<number[]> {
 
   if (platform === 'win') {
     try {
-      const { stdout } = await execAsync(
-        `netstat -ano | findstr "${pid}"`,
-        { timeout: 3000 }
-      )
+      const stdout = await spawnOutput('netstat', ['-ano'])
 
       for (const line of stdout.split('\n')) {
         // netstat -ano 输出格式:
@@ -248,21 +256,13 @@ async function findPortsByPid(pid: number): Promise<number[]> {
     // Linux/macOS 优先使用 lsof -i，失败时回退到 ss -tulnp
     let stdout = ''
     try {
-      const result = await execAsync(
-        `lsof -i -P -n 2>/dev/null | grep -E "^.*[[:space:]]+${pid}[[:space:]]+"`,
-        { timeout: 3000 }
-      )
-      stdout = result.stdout
+      stdout = await spawnOutput('lsof', ['-i', '-P', '-n'])
     } catch {
       try {
         // ss -tulnp 输出格式：
         //   tcp   LISTEN  0  50  0.0.0.0:25565  0.0.0.0:*  users:(("java",pid=12345,fd=30))
         //   udp   UNCONN  0   0  0.0.0.0:34197  0.0.0.0:*  users:(("factorio",pid=5678,fd=30))
-        const result = await execAsync(
-          `ss -tulnp 2>/dev/null | grep -E "pid=${pid}"`,
-          { timeout: 3000 }
-        )
-        stdout = result.stdout
+        stdout = await spawnOutput('ss', ['-tulnp'])
       } catch {
         return []
       }
@@ -271,6 +271,11 @@ async function findPortsByPid(pid: number): Promise<number[]> {
     for (const line of stdout.split('\n')) {
       const trimmed = line.trim()
       if (!trimmed) continue
+
+      // 过滤出包含目标 PID 的行（替换原有的 grep 过滤）
+      const hasPid = trimmed.includes(String(pid))
+        || trimmed.match(new RegExp(`\\b${pid}\\b`))
+      if (!hasPid) continue
 
       // 统一提取端口号，兼容各种输出格式：
       //   lsof: *:25565 (LISTEN)  或 127.0.0.1:60228 (LISTEN)

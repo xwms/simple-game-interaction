@@ -76,8 +76,15 @@ export function getLogFilePath(): string | null {
   return path.join(_logDir, `${getDateStr()}.log`)
 }
 
+/** 日志写入流（按日滚动） */
+let _writeStream: fs.WriteStream | null = null
+let _currentDateStr: string | null = null
+
 /**
- * 功能描述：写入日志文件（同步，按日期自动分文件）
+ * 功能描述：写入日志文件（异步，按日期自动分文件）
+ *
+ * 逻辑说明：使用 fs.WriteStream 异步写入，避免同步 I/O 阻塞事件循环。
+ *           按日滚动：日期变化时关闭旧流创建新流。
  *
  * @param message - 完整日志文本（含时间戳和级别）
  */
@@ -85,9 +92,15 @@ function writeToFile(message: string): void {
   const filePath = getLogFilePath()
   if (!filePath) return
   try {
-    fs.appendFileSync(filePath, message + '\n', 'utf-8')
+    const dateStr = getDateStr()
+    if (!_writeStream || _currentDateStr !== dateStr) {
+      if (_writeStream) _writeStream.end()
+      _writeStream = fs.createWriteStream(filePath, { flags: 'a', encoding: 'utf-8' })
+      _currentDateStr = dateStr
+    }
+    _writeStream.write(message + '\n')
   } catch {
-    // 文件写入失败不影响程序运行
+    // 写入失败不影响程序运行
   }
 }
 
