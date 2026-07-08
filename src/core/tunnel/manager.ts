@@ -780,6 +780,9 @@ export class TunnelManager extends EventEmitter {
     }
 
     const client = new LocalTunnelClient()
+    client.on('error', (err) => {
+      logger.error(`LocalTunnelClient error: ${(err as Error).message}`)
+    })
     client.setTransport(transport)
     await client.connect(this._gamePort, '127.0.0.1')
 

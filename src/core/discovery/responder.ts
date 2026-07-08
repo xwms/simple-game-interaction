@@ -58,6 +58,8 @@ export class Responder extends EventEmitter {
   constructor(discoveryPort: number = DISCOVERY_PORT) {
     super()
     this._discoveryPort = discoveryPort
+    // 防止调用方未监听 error 导致未捕获异常
+    this.on('error', () => {})
   }
 
   /**

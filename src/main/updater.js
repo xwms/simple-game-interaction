@@ -553,6 +553,13 @@ async function installUpdate(filePath) {
     // 传入 --updated 告诉 NSIS 这是更新（自动读取注册表中的上次安装路径）
     console.log(`[updater] 启动安装: ${filePath}`)
     try {
+      // 校验路径安全性：必须是 .exe 文件且存在
+      if (!filePath || typeof filePath !== 'string' || !filePath.toLowerCase().endsWith('.exe')) {
+        throw new Error('Invalid installer path')
+      }
+      if (!fs.existsSync(filePath)) {
+        throw new Error('Installer file not found')
+      }
       spawn(filePath, ['--updated'], {
         detached: true,
         stdio: 'ignore',

@@ -59,9 +59,18 @@ function registerIpcHandlers() {
     return { success: true, data: process.platform }
   })
 
-  ipcMain.handle('app:open-external', (_event, url) => {
-    shell.openExternal(url)
-    return { success: true }
+  ipcMain.handle('app:open-external', async (_event, url) => {
+    try {
+      // 只允许 https 协议，防止 file:// 等协议被滥用
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'https:') {
+        return { success: false, error: 'Only https URLs are allowed' }
+      }
+      await shell.openExternal(url)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('app:theme-changed', (_event, theme) => {
@@ -81,10 +90,14 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('app:open-log-dir', async () => {
-    const { getLogFilePath } = require('../core/utils/logger')
-    const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
-    shell.showItemInFolder(logPath)
-    return { success: true }
+    try {
+      const { getLogFilePath } = require('../core/utils/logger')
+      const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
+      shell.showItemInFolder(logPath)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
 
   ipcMain.handle('app:select-log-directory', async () => {
@@ -133,6 +146,16 @@ function registerIpcHandlers() {
         return { success: true, data: null }
       }
       filePath = result.filePaths[0]
+    }
+
+    // 校验路径：必须存在且是允许的图片格式
+    const allowedExts = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']
+    const ext = pathModule.extname(filePath).toLowerCase()
+    if (!allowedExts.includes(ext)) {
+      return { success: false, error: 'Unsupported image format' }
+    }
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' }
     }
 
     try {
