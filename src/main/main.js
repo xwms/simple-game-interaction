@@ -25,7 +25,7 @@ if (isDev) {
   process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 }
 
-// Linux 下禁用 Chromium sandbox（部分系统未启用 user namespace cloning）
+// Linux 下禁用 Chromium sandbox（electron-builder 打包后需 --no-sandbox 才能启动）
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox')
 }
