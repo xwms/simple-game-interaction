@@ -240,13 +240,16 @@ export class TunnelManager extends EventEmitter {
       }
     })
 
-    // 游戏客户端重连 → 通过 KCP 带内重置信号通知房主销毁旧连接，
-    // RESET 帧与游戏数据同路径（KCP 流），保证到达顺序
+    // 游戏客户端重连 → 通知房主销毁旧连接重建，
+    // 避免旧游戏响应数据通过中继污染新连接
     this._localServer.on('client-reconnected', () => {
       if (this._role === 'client') {
         if (this._currentTransport instanceof KcpTransport) {
           this._currentTransport.sendControl('reset')
           logger.debug('KCP in-band reset signal sent')
+        } else if (this._currentTransport && this._currentTransport.type === 'relay') {
+          this._relayClient.sendData(Buffer.alloc(0))
+          logger.debug('Relay reset signal sent')
         }
       }
     })
