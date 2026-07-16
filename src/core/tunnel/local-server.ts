@@ -184,6 +184,12 @@ export class LocalTunnelServer extends EventEmitter {
   private _onClientConnection(socket: net.Socket): void {
     socket.setNoDelay(true)
 
+    // 断开之前的连接，防止数据写到多个客户端导致协议错乱（如 Minecraft 重连场景）
+    for (const existing of this._clientConnections) {
+      existing.destroy()
+    }
+    this._clientConnections.clear()
+
     const wasAllDisconnected = this._allClientsDisconnected
     this._allClientsDisconnected = false
     this._clientConnections.add(socket)
