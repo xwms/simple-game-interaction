@@ -74,6 +74,9 @@ async function checkUpdate(): Promise<void> {
  * @param data - 更新检查返回的数据
  */
 function applyUpdateData(data: UpdateCheckData): void {
+  updateVersion.value = data.version
+  releaseNotes.value = data.releaseNotes || ''
+
   if (!data.hasUpdate) {
     updateStatus.value = 'latest'
     return
@@ -90,8 +93,6 @@ function applyUpdateData(data: UpdateCheckData): void {
   }
   updateDownloadUrl.value = data.downloadUrl || ''
   downloadedBytes.value = data.downloadedBytes || 0
-  updateVersion.value = data.version
-  releaseNotes.value = data.releaseNotes || ''
 }
 
 /**
