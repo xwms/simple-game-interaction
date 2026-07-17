@@ -143,23 +143,18 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
     expect(server.clientCount).toBe(0)
   })
 
-  it('多个客户端可同时连接', async () => {
+  it('新客户端连接时旧客户端自动断开（Minecraft 重连场景）', async () => {
     const connectedClients: string[] = []
     server.on('client-connected', (data: { remoteAddr: string }) => {
       connectedClients.push(data.remoteAddr)
     })
 
     const client1 = net.createConnection({ host: '127.0.0.1', port: localPort })
-    const client2 = net.createConnection({ host: '127.0.0.1', port: localPort })
-    await Promise.all([
-      new Promise<void>((resolve) => client1.on('connect', () => resolve())),
-      new Promise<void>((resolve) => client2.on('connect', () => resolve()))
-    ])
-    // 等待服务端处理两个 connection 事件（CI 环境下事件循环时序有差异）
+    await new Promise<void>((resolve) => client1.on('connect', () => resolve()))
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('timeout waiting for 2 clients')), 3000)
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for client1')), 3000)
       const check = () => {
-        if (connectedClients.length >= 2) {
+        if (server.clientCount >= 1) {
           clearTimeout(timeout)
           resolve()
         } else {
@@ -169,8 +164,31 @@ describe('LocalTunnelServer 本地隧道服务端', () => {
       setImmediate(check)
     })
 
-    expect(server.clientCount).toBe(2)
-    client1.destroy()
+    // 第一个连接已建立
+    expect(server.clientCount).toBe(1)
+
+    // 第二个连接接入时，第一个应被断开
+    const client1Closed = new Promise<void>((resolve) => client1.on('close', () => resolve()))
+    const client2 = net.createConnection({ host: '127.0.0.1', port: localPort })
+    await new Promise<void>((resolve) => client2.on('connect', () => resolve()))
+
+    // 等待旧连接被销毁、新连接建立
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for client2')), 3000)
+      const check = () => {
+        if (server.clientCount === 1) {
+          clearTimeout(timeout)
+          resolve()
+        } else {
+          setImmediate(check)
+        }
+      }
+      setImmediate(check)
+    })
+
+    // 只有一个活跃连接（旧的已被断开）
+    expect(server.clientCount).toBe(1)
+    await client1Closed
     client2.destroy()
   })
 })
