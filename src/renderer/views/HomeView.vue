@@ -46,7 +46,7 @@ const downloadState = getDownloadState()
  * 功能描述：检查更新（带 5 分钟缓存）
  */
 async function checkUpdate(): Promise<void> {
-  const cached = getCachedUpdate()
+  const cached = getCachedUpdate(currentVersion.value)
   if (cached) {
     applyUpdateData(cached)
     return

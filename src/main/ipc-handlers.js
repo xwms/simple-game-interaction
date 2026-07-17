@@ -80,8 +80,12 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('app:open-log-file', async () => {
+    const fs = require('fs')
     const { getLogFilePath } = require('../core/utils/logger')
     const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
+    if (!fs.existsSync(logPath)) {
+      return { success: false, error: 'Log file does not exist' }
+    }
     const err = await shell.openPath(logPath)
     if (err) {
       return { success: false, error: err }
@@ -91,9 +95,19 @@ function registerIpcHandlers() {
 
   ipcMain.handle('app:open-log-dir', async () => {
     try {
+      const fs = require('fs')
       const { getLogFilePath } = require('../core/utils/logger')
       const logPath = getLogFilePath() || path.join(app.getPath('userData'), 'logs', 'app.log')
-      shell.showItemInFolder(logPath)
+      const dirPath = path.dirname(logPath)
+      if (!fs.existsSync(dirPath)) {
+        return { success: false, error: 'Log directory does not exist' }
+      }
+      // 文件存在时用 showItemInFolder 定位到文件；文件不存在时直接打开目录
+      if (fs.existsSync(logPath)) {
+        shell.showItemInFolder(logPath)
+      } else {
+        await shell.openPath(dirPath)
+      }
       return { success: true }
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) }

@@ -51,7 +51,7 @@ if (!gotTheLock) {
   // 配置日志文件路径和级别
   const { setLogFilePath, setProduction } = require('../core/utils/logger')
   setLogFilePath(path.join(app.getPath('userData'), 'logs', 'app.log'))
-  setProduction(false) // debug 模式：打包后也输出 debug 日志
+  setProduction(!isDev) // 开发环境输出 debug 日志，生产环境抑制
 
   createMenu()
   registerIpcHandlers()

@@ -21,18 +21,25 @@ export interface UpdateCheckData {
 interface CacheEntry {
   data: UpdateCheckData
   expiry: number
+  /** 创建缓存时的当前版本号，版本变更时缓存自动失效 */
+  currentVersion: string
 }
 
 let cache: CacheEntry | null = null
 const TTL = 120_000
 
 /**
- * 功能描述：获取缓存的更新数据（未过期时返回，过期返回 null）
+ * 功能描述：获取缓存的更新数据（未过期且版本匹配时返回）
  *
+ * @param currentVersion - 当前版本号，传此参数时版本变更会自动失效
  * @returns 缓存数据或 null
  */
-export function getCachedUpdate(): UpdateCheckData | null {
+export function getCachedUpdate(currentVersion?: string): UpdateCheckData | null {
   if (cache && Date.now() < cache.expiry) {
+    // 版本已变更时忽略缓存，避免版本号不同返回旧数据
+    if (currentVersion && cache.currentVersion !== currentVersion) {
+      return null
+    }
     return cache.data
   }
   return null
@@ -40,9 +47,12 @@ export function getCachedUpdate(): UpdateCheckData | null {
 
 /**
  * 功能描述：清空并设置一个过期缓存
+ *
+ * @param data - 更新数据
+ * @param currentVersion - 缓存时的版本号，用于后续版本变更时自动失效
  */
-export function setCachedUpdate(data: UpdateCheckData): void {
-  cache = { data, expiry: Date.now() + TTL }
+export function setCachedUpdate(data: UpdateCheckData, currentVersion?: string): void {
+  cache = { data, expiry: Date.now() + TTL, currentVersion: currentVersion || '' }
 }
 
 /**
@@ -52,7 +62,7 @@ export function setCachedUpdate(data: UpdateCheckData): void {
  * @returns 更新数据（成功时）或 null
  */
 export async function fetchUpdate(currentVersion?: string): Promise<UpdateCheckData | null> {
-  const cached = getCachedUpdate()
+  const cached = getCachedUpdate(currentVersion)
   if (cached) return cached
 
   console.debug('[update-cache] 缓存未命中，请求 API')
@@ -60,7 +70,7 @@ export async function fetchUpdate(currentVersion?: string): Promise<UpdateCheckD
     const result = await window.electronAPI.invoke('update:check', { currentVersion })
     if (result.success && result.data) {
       const data = result.data as UpdateCheckData
-      setCachedUpdate(data)
+      setCachedUpdate(data, currentVersion)
       return data
     }
   } catch (err) {

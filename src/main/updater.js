@@ -110,7 +110,7 @@ function initUpdater() {
 }
 
 /**
- * 功能描述：获取 API 基础 URL
+ * 功能描述：获取 Gitee Releases 最新 URL
  *
  * @returns {string} Gitee API URL
  */
@@ -119,7 +119,7 @@ function getGiteeApiUrl(owner, repo) {
 }
 
 /**
- * 功能描述：获取 GitHub API 基础 URL
+ * 功能描述：获取 GitHub Releases 最新 URL
  *
  * @returns {string} GitHub API URL
  */
@@ -282,6 +282,8 @@ async function checkForUpdates(versionOverride) {
 
   const latestVersion = releaseData.tag_name.replace(/^v/, '')
   const hasUpdate = isNewerVersion(currentVersion, latestVersion)
+
+  console.log(`[updater] 当前版本=${currentVersion}, 最新=${latestVersion}, 源=${source}, 有更新=${hasUpdate}`)
 
   // 检测是否存在已部分下载的文件，用于跨重启续传
   let downloadedBytes = 0

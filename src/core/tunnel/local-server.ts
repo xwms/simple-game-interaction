@@ -42,8 +42,6 @@ export class LocalTunnelServer extends EventEmitter {
   private _status: TransportStatus = 'disconnected'
   /** 是否全部客户端已断开（用于检测客户端重连） */
   private _allClientsDisconnected: boolean = false
-  /** 重连冷却期截止时间戳 — 期间丢弃中继残留数据 */
-  private _reconnectCooldownUntil: number = 0
 
   /** 当前监听端口（0 表示未启动） */
   get localPort(): number {
@@ -159,13 +157,7 @@ export class LocalTunnelServer extends EventEmitter {
 
     // 注册新 transport 的事件监听
     transport.on(TRANSPORT_EVENTS.DATA, (data: unknown) => {
-      const buf = data as Buffer
-      // 重连冷却期内丢弃中继残留数据，防止旧响应污染新连接
-      if (Date.now() < this._reconnectCooldownUntil) {
-        logger.debug(`Discarding ${buf.length}B data during reconnect cooldown`)
-        return
-      }
-      this._writeToAllClients(buf)
+      this._writeToAllClients(data as Buffer)
     })
 
     transport.on(TRANSPORT_EVENTS.STATUS, (status: unknown) => {
@@ -202,8 +194,6 @@ export class LocalTunnelServer extends EventEmitter {
     this._allClientsDisconnected = false
     this._clientConnections.add(socket)
     if (wasAllDisconnected) {
-      // 重连后设置 800ms 冷却期，丢弃中继中残留的旧数据
-      this._reconnectCooldownUntil = Date.now() + 800
       logger.info('Game client reconnection detected')
       this.emit('client-reconnected')
     }

@@ -177,6 +177,8 @@ export default {
     clear: '清空',
     openFile: '打开日志文件',
     openDir: '打开日志目录',
+    openFileError: '日志文件不存在',
+    openDirError: '日志目录不存在',
     scrollLatest: '↓ 最新'
   },
   about: {

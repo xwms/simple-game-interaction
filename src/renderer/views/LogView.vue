@@ -7,24 +7,32 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useMessage } from 'naive-ui'
 import LogViewer from '../components/LogViewer.vue'
 import { useLogStore } from '../store/log'
 
 const logStore = useLogStore()
 const { t } = useI18n()
+const message = useMessage()
 
 /**
  * 功能描述：打开日志文件
  */
-function handleOpenLogFile(): void {
-  window.electronAPI.invoke('app:open-log-file')
+async function handleOpenLogFile(): Promise<void> {
+  const result = await window.electronAPI.invoke('app:open-log-file')
+  if (!result.success) {
+    message.warning(t('logs.openFileError'))
+  }
 }
 
 /**
  * 功能描述：打开日志目录
  */
-function handleOpenLogDir(): void {
-  window.electronAPI.invoke('app:open-log-dir')
+async function handleOpenLogDir(): Promise<void> {
+  const result = await window.electronAPI.invoke('app:open-log-dir')
+  if (!result.success) {
+    message.warning(t('logs.openDirError'))
+  }
 }
 </script>
 

@@ -177,6 +177,8 @@ export default {
     clear: 'Clear',
     openFile: 'Open Log File',
     openDir: 'Open Log Folder',
+    openFileError: 'Log file not found',
+    openDirError: 'Log directory not found',
     scrollLatest: '↓ Latest'
   },
   about: {

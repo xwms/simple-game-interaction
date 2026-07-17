@@ -261,8 +261,9 @@ export class RelayServer {
   /**
    * 功能描述：处理 WebSocket 消息
    *
-   * 逻辑说明：区分二进制帧和数据帧。文本帧解析 JSON 后按 type 路由。
-   *           所有消息先经过限流检查。超限消息被静默丢弃。
+   * 逻辑说明：文本帧（JSON 控制消息）经过限流检查后路由到 _handleText。
+   *           二进制帧先尝试解析为 JSON（Windows 下文本帧以 Buffer 交付），
+   *           解析成功则同上限流处理；解析失败为真正数据帧，不限流直接转发。
    *
    * @param ws - 来源 WebSocket
    * @param raw - 原始消息数据
@@ -271,40 +272,33 @@ export class RelayServer {
     const state = this._connections.get(ws)
     if (!state) return
 
-    // 限流检查（每连接每秒消息数）
-    if (!this._consumeToken(state.id)) {
-      console.log(JSON.stringify({
-        time: nowISO(), level: 'warn', module: 'rate-limit',
-        msg: 'Message rate limit exceeded, dropping', ip: state.ip,
-        memberId: state.memberId || 'unauthed', messageCount: state.messageCount
-      }))
-      return
-    }
-
     state.lastActivity = Date.now()
     state.alive = true
 
-    // 文本（JSON）或二进制
     if (typeof raw === 'string') {
+      if (!this._checkRateLimit(state)) return
       this._handleText(ws, state, raw)
-    } else {
-      // ws 包在 Windows 下也可能以 Buffer 交付文本帧
-      if (raw.length > this._config.maxFrameSize) {
-        console.log(JSON.stringify({
-          time: nowISO(), level: 'warn', module: 'server',
-          msg: 'Frame too large, closing', bytes: raw.length, ip: state.ip
-        }))
-        ws.close(1009, 'Frame too large')
-        return
-      }
+      return
+    }
 
-      const text = raw.toString('utf8')
-      try {
-        JSON.parse(text)
-        this._handleText(ws, state, text)
-      } catch {
-        this._handleBinary(ws, state, raw)
-      }
+    // 二进制帧：检查大小限制后，尝试解析 JSON
+    if (raw.length > this._config.maxFrameSize) {
+      console.log(JSON.stringify({
+        time: nowISO(), level: 'warn', module: 'server',
+        msg: 'Frame too large, closing', bytes: raw.length, ip: state.ip
+      }))
+      ws.close(1009, 'Frame too large')
+      return
+    }
+
+    const text = raw.toString('utf8')
+    try {
+      JSON.parse(text)
+      if (!this._checkRateLimit(state)) return
+      this._handleText(ws, state, text)
+    } catch {
+      // 不是 JSON → 真正的二进制数据帧 → 不限流
+      this._handleBinary(ws, state, raw)
     }
   }
 
@@ -949,6 +943,22 @@ export class RelayServer {
    * @param connId - 连接 ID
    * @returns 是否可以发送消息
    */
+  /**
+   * 功能描述：检查是否超过消息限流，超限时记录日志
+   *
+   * @param state - 连接状态
+   * @returns true = 未超限可以继续，false = 超限已丢弃
+   */
+  private _checkRateLimit(state: ConnectionState): boolean {
+    if (this._consumeToken(state.id)) return true
+    console.log(JSON.stringify({
+      time: nowISO(), level: 'warn', module: 'rate-limit',
+      msg: 'Message rate limit exceeded, dropping', ip: state.ip,
+      memberId: state.memberId || 'unauthed', messageCount: state.messageCount
+    }))
+    return false
+  }
+
   private _consumeToken(connId: string): boolean {
     const bucket = this._buckets.get(connId)
     if (!bucket) return true // 不存在时放行
