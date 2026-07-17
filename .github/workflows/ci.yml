@@ -133,6 +133,7 @@ jobs:
               const d=[]; process.stdin.on('data',c=>d.push(c));
               process.stdin.on('end',()=>{
                 const r=JSON.parse(d.join(''));
+                if (!Array.isArray(r)) { console.log(''); process.exit(0); }
                 const m=r.find(x=>x.tag_name===process.env.TAG);
                 console.log(m?m.id:'')
               })
