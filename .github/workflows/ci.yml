@@ -128,7 +128,9 @@ jobs:
           export BODY
 
           # 2. 查询 Gitee 已有 release
-          EXISTING_ID=$(curl -s "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases?access_token=${GITEE_TOKEN}&per_page=100" \
+          GITEE_RESP=$(curl -s "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases?access_token=${GITEE_TOKEN}&per_page=100")
+          echo "Gitee list response: ${GITEE_RESP:0:200}"
+          EXISTING_ID=$(echo "${GITEE_RESP}" \
             | node -e "
               const d=[]; process.stdin.on('data',c=>d.push(c));
               process.stdin.on('end',()=>{
@@ -157,9 +159,16 @@ jobs:
               -H "Content-Type: application/json" -d "${CREATE_BODY}" > /dev/null
           else
             echo "Creating Gitee release..."
-            EXISTING_ID=$(curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases?access_token=${GITEE_TOKEN}" \
-              -H "Content-Type: application/json" -d "${CREATE_BODY}" \
-              | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).id||''))")
+            CREATE_RESP=$(curl -s -X POST "https://gitee.com/api/v5/repos/xwms/simple-game-interaction/releases?access_token=${GITEE_TOKEN}" \
+              -H "Content-Type: application/json" -d "${CREATE_BODY}")
+            echo "Gitee create response: ${CREATE_RESP:0:300}"
+            EXISTING_ID=$(echo "${CREATE_RESP}" | node -e "
+              const d=[]; process.stdin.on('data',c=>d.push(c));
+              process.stdin.on('end',()=>{
+                const r=JSON.parse(d.join(''));
+                console.log(r&&r.id?r.id:'')
+              })
+            ")
             echo "Created id=${EXISTING_ID}"
           fi
 
