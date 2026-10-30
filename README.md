@@ -1,6 +1,6 @@
 # SGI — 局域网游戏联机工具
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)]()
 [![CI](https://github.com/xwms/simple-game-interaction/actions/workflows/ci.yml/badge.svg)](https://github.com/xwms/simple-game-interaction/actions/workflows/ci.yml)
 [![Electron](https://img.shields.io/badge/Electron-35+-47848F.svg)]()
 [![Vue](https://img.shields.io/badge/Vue-3.5+-4FC08D.svg)]()
@@ -71,7 +71,7 @@ npm run dist    # 打包为安装包
 
 - **语言**：中文 / English，即时切换
 - **主题**：浅色 / 深色 / 跟随系统
-- **中继服务器**：自定义中继服务器地址（默认 `ws://sgi-relay:9800`）
+- **中继服务器**：自定义中继服务器地址（默认 `ws://159.75.150.37:9800`）
 - **自动更新**：开关启动时自动检查更新
 
 ## 🔗 连接优先级

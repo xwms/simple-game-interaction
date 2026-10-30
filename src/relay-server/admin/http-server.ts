@@ -16,6 +16,18 @@ export class AdminServer {
   private _server: http.Server | null = null
 
   /**
+   * 功能描述：获取实际监听端口
+   *
+   * 逻辑说明：配置为 0 时由系统分配端口，测试和运维需要读取实际端口。
+   *
+   * @returns 监听端口，服务未启动时返回 0
+   */
+  get port(): number {
+    const address = this._server?.address()
+    return address !== null && address !== undefined && typeof address === 'object' ? address.port : 0
+  }
+
+  /**
    * 功能描述：启动 HTTP 管理服务
    *
    * @param config - 中继配置
@@ -25,7 +37,7 @@ export class AdminServer {
   start(config: RelayConfig, server: RelayServer, store: Store): void {
     this._server = http.createServer(async (req, res) => {
       try {
-        await this._handleRequest(req, res, server, store)
+        await this._handleRequest(req, res, server, store, config)
       } catch (err) {
         this._writeJson(res, 500, { error: (err as Error).message })
       }
@@ -34,7 +46,7 @@ export class AdminServer {
     this._server.listen(config.adminPort, config.adminHost, () => {
       console.log(JSON.stringify({
         time: nowISO(), level: 'info', module: 'admin',
-        msg: `Admin HTTP server listening on ${config.adminHost}:${config.adminPort}`
+        msg: `Admin HTTP server listening on ${config.adminHost}:${this.port}`
       }))
     })
 
@@ -63,14 +75,17 @@ export class AdminServer {
     req: http.IncomingMessage,
     res: http.ServerResponse,
     server: RelayServer,
-    store: Store
+    store: Store,
+    config: RelayConfig
   ): Promise<void> {
-    const url = req.url ?? '/'
     const method = req.method ?? 'GET'
+    const parsed = new URL(req.url ?? '/', 'http://localhost')
+    const pathname = parsed.pathname
 
-    // CORS 头（允许管理端跨域访问）
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, DELETE, OPTIONS')
+    if (!this._isAuthorized(req, parsed, config.adminToken)) {
+      this._writeJson(res, 401, { error: 'Unauthorized' })
+      return
+    }
 
     if (method === 'OPTIONS') {
       res.writeHead(204)
@@ -78,7 +93,7 @@ export class AdminServer {
       return
     }
 
-    switch (url) {
+    switch (pathname) {
       case '/':
         return this._handleDashboard(res)
       case '/health':
@@ -88,12 +103,33 @@ export class AdminServer {
       case '/api/rooms':
         return this._handleRooms(res, store)
       default:
-        if (method === 'DELETE' && url?.startsWith('/api/rooms/')) {
-          const code = url.slice('/api/rooms/'.length)
+        if (method === 'DELETE' && pathname.startsWith('/api/rooms/')) {
+          const code = decodeURIComponent(pathname.slice('/api/rooms/'.length))
           return this._handleDeleteRoom(res, code, store)
         }
         this._writeJson(res, 404, { error: 'Not found' })
     }
+  }
+
+  /**
+   * 功能描述：校验管理 API 请求是否携带有效令牌
+   *
+   * 逻辑说明：未配置 adminToken 时全部放行（默认只监听 127.0.0.1）。
+   *           配置后支持三种携带方式：Authorization: Bearer、X-Admin-Token，
+   *           以及 ?token= 查询参数（供浏览器直接打开管理面板使用）。
+   *           查询参数会出现在访问日志中，仅建议在本机面板使用。
+   *
+   * @param req - HTTP 请求
+   * @param parsed - 已解析的请求 URL
+   * @param token - 配置的令牌，空字符串表示不鉴权
+   * @returns 是否允许访问
+   */
+  private _isAuthorized(req: http.IncomingMessage, parsed: URL, token: string): boolean {
+    if (!token) return true
+    const auth = req.headers.authorization
+    if (auth === `Bearer ${token}`) return true
+    if (req.headers['x-admin-token'] === token) return true
+    return parsed.searchParams.get('token') === token
   }
 
   /**
@@ -150,9 +186,11 @@ function fmtUptime(s) {
 }
 async function load() {
   try {
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const q = token ? ('?token=' + encodeURIComponent(token)) : '';
     const [health, rooms] = await Promise.all([
-      fetch('/health').then(r => r.json()),
-      fetch('/api/rooms').then(r => r.json())
+      fetch('/health' + q).then(r => r.json()),
+      fetch('/api/rooms' + q).then(r => r.json())
     ]);
     document.getElementById('uptime').textContent = fmtUptime(health.uptime);
     document.getElementById('rooms').textContent = health.rooms;

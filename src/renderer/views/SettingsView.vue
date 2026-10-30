@@ -63,7 +63,8 @@ function handleDeleteAllLogs(): void {
     onPositiveClick: async () => {
       const result = await window.electronAPI.invoke('log:delete-all')
       if (result.success) {
-        const count = result.data?.deletedCount ?? 0
+        const data = result.data as { deletedCount?: number } | undefined
+        const count = data?.deletedCount ?? 0
         message.success(t('settings.logCleanupDone', { count }))
       }
     }

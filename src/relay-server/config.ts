@@ -31,6 +31,7 @@ export function loadConfig(): RelayConfig {
   // ─── 管理 API ───────────────────────
   if (process.env.RELAY_ADMIN_HOST) config.adminHost = process.env.RELAY_ADMIN_HOST
   if (process.env.RELAY_ADMIN_PORT) config.adminPort = parseInt(process.env.RELAY_ADMIN_PORT, 10)
+  if (process.env.RELAY_ADMIN_TOKEN) config.adminToken = process.env.RELAY_ADMIN_TOKEN
 
   // ─── 房间 ───────────────────────────
   if (process.env.RELAY_MAX_ROOMS) config.maxRooms = parseInt(process.env.RELAY_MAX_ROOMS, 10)
@@ -104,7 +105,7 @@ export function printConfig(config: RelayConfig): void {
   console.log('  Relay Server Configuration')
   console.log('  ─────────────────────────')
   console.log(`  Listen:     ${config.host}:${config.port}${config.tlsCert ? ' (WSS)' : ' (WS)'}`)
-  console.log(`  Admin API:  ${config.adminHost}:${config.adminPort}`)
+  console.log(`  Admin API:  ${config.adminHost}:${config.adminPort}${config.adminToken ? ' (token required)' : ' (no auth)'}`)
   console.log(`  Max Rooms:  ${config.maxRooms}  (${config.maxMembers}/room, ${config.roomIdleTimeout}s idle)`)
   console.log(`  Max Conn:   ${config.maxClients}  (${config.maxPerIp}/IP)`)
   console.log(`  Rate Lim:   ${config.msgRate} msg/s/conn  |  Room create: ${config.roomCreateRate}/min/IP`)

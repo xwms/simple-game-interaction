@@ -16,6 +16,8 @@ export interface RelayConfig {
   tlsKey: string
   adminHost: string
   adminPort: number
+  /** 管理 API 鉴权令牌，空字符串表示不鉴权（仅建议在绑定 127.0.0.1 时使用） */
+  adminToken: string
   maxRooms: number
   maxMembers: number
   roomIdleTimeout: number
@@ -39,6 +41,7 @@ export const DEFAULTS: RelayConfig = {
   tlsKey: '',
   adminHost: '127.0.0.1',
   adminPort: 9801,
+  adminToken: '',
   maxRooms: 1000,
   maxMembers: 8,
   roomIdleTimeout: 600,

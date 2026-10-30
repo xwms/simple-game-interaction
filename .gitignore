@@ -3,7 +3,11 @@ node_modules/
 
 # Build output
 dist/
-release/
+/release/
+
+# .NET build output (lightweight)
+lightweight/bin/
+lightweight/obj/
 
 # IDE
 .idea/
@@ -34,7 +38,8 @@ src/components.d.ts
 
 # Claude
 CLAUDE.md
-.claude
+.claude/*
+!.claude/skills/
 
 # Electron dev cache
 electron-dev1/
