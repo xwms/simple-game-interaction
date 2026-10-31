@@ -3,21 +3,6 @@ node_modules/
 
 # Build output
 dist/
-/release/
-
-# .NET build output (lightweight)
-lightweight/bin/
-lightweight/obj/
-
-# IDE
-.idea/
-*.swp
-*.swo
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Env
 .env
@@ -30,22 +15,9 @@ logs/
 
 # Test
 coverage/
-test-results/
 
-# Auto-generated
-src/auto-imports.d.ts
-src/components.d.ts
-
-# Claude
-CLAUDE.md
-.claude/*
-!.claude/skills/
-
-# Electron dev cache
-electron-dev1/
-electron-dev2/
-%USERPROFILE%/electron-dev2/
-
-# Resources (icons only)
-resources/font*
-resources/lib/
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

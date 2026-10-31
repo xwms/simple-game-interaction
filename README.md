@@ -1,161 +1,119 @@
-# SGI — 局域网游戏联机工具
+# SGI 中继服务器
 
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)]()
-[![CI](https://github.com/xwms/simple-game-interaction/actions/workflows/ci.yml/badge.svg)](https://github.com/xwms/simple-game-interaction/actions/workflows/ci.yml)
-[![Electron](https://img.shields.io/badge/Electron-35+-47848F.svg)]()
-[![Vue](https://img.shields.io/badge/Vue-3.5+-4FC08D.svg)]()
+SGI（局域网游戏联机工具）的独立中继服务器。基于 Node.js + `ws`，负责房间管理、信令转发与游戏数据转发，是客户端连接路径中 IPv6 直连、P2P 直连之后的兜底方案。
 
-**SGI (Simple Game Interaction)** 是一款帮助非技术用户将**局域网联机游戏**通过互联网进行联机的桌面工具。无需公网 IP、无需端口转发、无需复杂配置，几步即可和朋友联机。 🎮
+## 分支说明
 
-## ✨ 功能特性
+| 分支 | 内容 |
+|------|------|
+| `main` | Electron 全平台客户端 |
+| `relay-server` | 本分支：独立中继服务器（Node/TypeScript + Docker） |
+| `lightweight` | C# + WebView2 轻量版 Windows 客户端 |
 
-- 🔍 **自动游戏发现** — 自动检测本机安装的局域网联机游戏（Minecraft、Terraria、Stardew Valley 等）
-- 🧠 **智能连接选择** — IPv6 直连 → P2P 直连 → 中继转发，自动选择最优连接路径
-- 🔑 **房间码加入** — 房主创建房间后生成 6 位房间码，朋友输入即可加入
-- 📡 **网络自检** — 自动检测 NAT 类型、IPv6 能力，显示预计连接方式
-- 📊 **流量监控** — 实时显示上传/下载速率
-- 💻 **跨平台** — Windows、macOS、Linux 全平台支持
-- 🌐 **国际化** — 中文 / English 双语界面
-- 🔄 **自动更新** — 启动时静默检查更新，一键下载安装
+## 功能
 
-## 🚀 快速开始
+- 6 位房间码的房间生命周期管理
+- 房主/加入者信令转发与二进制游戏数据转发
+- 心跳检测、空闲房间回收、客户端与 IP 级限流、熔断
+- HTTP 管理 API：健康检查、指标、房间列表、删除房间
+- 可选管理令牌鉴权，支持 TLS（WSS）
 
-### 下载安装
+## 目录结构
 
-从 [GitHub Releases](https://github.com/xwms/simple-game-interaction/releases) 下载对应平台安装包：
+```
+src/relay-server/
+├── main.ts                 # CLI 入口：加载配置、启动 WS 与 Admin 服务
+├── server.ts               # WebSocket 中继主逻辑
+├── config.ts               # RELAY_* 环境变量解析与校验
+├── types.ts                # 配置、房间、客户端类型与默认值
+├── protocol.md             # 通信协议规范
+├── admin/http-server.ts    # 管理 API（health / metrics / rooms / delete）
+├── store/                  # 内存存储
+├── utils.ts                # 工具函数
+├── Dockerfile
+└── docker-compose.yml
 
-| 平台 | 安装包 |
-|------|--------|
-| Windows | `SGI-Setup-1.0.0-win.exe` |
-| macOS Intel | `SGI-1.0.0-mac-x64.dmg` |
-| macOS Apple Silicon | `SGI-1.0.0-mac-arm64.dmg` |
-| Linux | `SGI-1.0.0-linux.AppImage` / `.deb` |
+tests/
+├── unit/relay-server/      # 管理 API 单元测试（vitest）
+└── relay-integration.ts    # 端到端协议集成测试
+```
 
-### 从源码运行
+## 快速开始
+
+需要 Node.js 20+（推荐 22）。
 
 ```bash
-# 克隆项目
-git clone https://github.com/xwms/simple-game-interaction.git
-cd simple-game-interaction
-
-# 安装依赖
 npm install
-
-# 开发模式运行
-npm run dev
-
-# 生产构建
-npm run build
-npm run pack    # 打包为目录（未压缩）
-npm run dist    # 打包为安装包
+npm run dev        # tsx 直接运行
 ```
 
-## 📖 使用指南
-
-### 👑 房主（创建房间）
-
-1. 打开 SGI，点击「创建房间」
-2. 工具自动扫描本机游戏，选择你要联机的游戏
-3. 确认游戏端口，点击「创建房间」
-4. 将生成的 **6 位房间码** 发给朋友
-5. 等待朋友加入，开始游戏
-
-### 🎮 加入者（加入房间）
-
-1. 打开 SGI，点击「加入房间」
-2. 输入房主给你的 6 位房间码
-3. 等待连接建立
-4. 打开游戏，连接 `127.0.0.1:SGI本地端口` 即可
-
-### ⚙️ 设置
-
-- **语言**：中文 / English，即时切换
-- **主题**：浅色 / 深色 / 跟随系统
-- **中继服务器**：自定义中继服务器地址（默认 `ws://159.75.150.37:9800`）
-- **自动更新**：开关启动时自动检查更新
-
-## 🔗 连接优先级
-
-SGI 根据双方网络状况自动选择最优连接路径：
-
-1. 🌐 **IPv6 直连** — 最低延迟，最高吞吐（双方均有公网 IPv6）
-2. ⚡ **P2P 直连** — TCP 直连，无中间节点（非 Symmetric NAT）
-3. 🔁 **中继转发** — 兜底方案，通过中继服务器转发（所有网络类型可用）
-
-## 🛠 技术栈
-
-| 层级 | 技术 | 说明 |
-|------|------|------|
-| 桌面框架 | Electron 35 | 主进程 (JS) |
-| 前端 UI | Vue 3.5 + TypeScript | 渲染进程 |
-| UI 组件 | Naive UI + UnoCSS | 界面组件库 |
-| 状态管理 | Pinia | 渲染进程状态 |
-| 核心引擎 | TypeScript | 主进程运行, 平台无关 |
-| 网络隧道 | TCP Socket (net) | IPv6/P2P/Relay 传输 |
-| NAT 检测 | STUN (RFC 3489) | NAT 类型识别 |
-| 测试 | Vitest + Playwright | 单元 + E2E 测试 |
-| 构建 | Vite 6 + electron-builder | 开发构建与打包 |
-
-## 📁 项目结构
-
-```
-src/
-├── main/                # Electron 主进程 (JS)
-│   ├── main.js          #   应用入口
-│   ├── ipc-handlers.js  #   IPC 通道
-│   ├── window-manager.js#   窗口管理
-│   ├── tray.js          #   系统托盘
-│   ├── updater.js       #   自动更新
-│   └── menu.js          #   应用菜单
-├── renderer/            # 渲染进程 (Vue3 + TS)
-│   ├── views/           #   页面视图
-│   ├── components/      #   公共组件
-│   ├── store/           #   Pinia 状态
-│   ├── i18n/            #   国际化
-│   ├── router/          #   路由
-│   └── composables/     #   组合式函数
-├── core/                # 核心引擎 (TS, 平台无关)
-│   ├── discovery/       #   LAN 游戏发现
-│   ├── network-detect/  #   网络检测
-│   ├── connection/      #   路径选择
-│   ├── tunnel/          #   TCP 隧道
-│   ├── p2p/             #   P2P 直连
-│   ├── game-detect/     #   本地游戏检测
-│   └── utils/           #   工具函数
-└── shared/              # 共享类型
-```
-
-## 💻 开发命令
+生产构建与启动：
 
 ```bash
-npm run dev              # 启动开发环境
-npm run build            # 生产构建
-npm run test             # 运行单元测试
-npm run test:watch       # 测试监听模式
-npm run test:e2e         # E2E 测试
-npm run type-check       # TypeScript 类型检查
-npm run lint             # ESLint 检查
-npm run dist:win         # 打包 Windows 安装包
-npm run dist:mac         # 打包 macOS 安装包
-npm run dist:linux       # 打包 Linux 安装包
+npm run build      # tsc → dist/relay-server/
+npm start          # node dist/relay-server/main.js
 ```
 
-## ❓ 常见问题
+## 配置
 
-**Q: 需要公网 IP 吗？**  
-A: 不需要。SGI 的 IPv6直连/P2P 直连/中继转发三种模式均不要求公网 IP。
+所有配置通过 `RELAY_*` 环境变量覆盖默认值，完整示例见 [.env.example](.env.example)。
 
-**Q: 支持哪些游戏？**  
-A: 内置支持 Minecraft Java Edition、Terraria、Stardew Valley、Factorio、Valheim、CS:GO、OpenArena 等常见局域网联机游戏，也可手动指定端口适配任意游戏。
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `RELAY_HOST` | `0.0.0.0` | WebSocket 监听地址 |
+| `RELAY_PORT` | `9800` | WebSocket 端口 |
+| `RELAY_ADMIN_HOST` | `0.0.0.0` | 管理 API 监听地址 |
+| `RELAY_ADMIN_PORT` | `9801` | 管理 API 端口 |
+| `RELAY_ADMIN_TOKEN` | 空 | 管理 API 令牌；为空时不鉴权 |
+| `RELAY_TLS_CERT` / `RELAY_TLS_KEY` | 空 | 配置后启用 WSS |
+| `RELAY_MAX_ROOMS` | `1000` | 最大房间数 |
+| `RELAY_MAX_MEMBERS` | `8` | 单房间最大成员数 |
+| `RELAY_MAX_CLIENTS` | `5000` | 最大连接数 |
+| `RELAY_MAX_PER_IP` | `10` | 单 IP 最大连接数 |
+| `RELAY_MSG_RATE` | `100` | 单连接每秒消息数上限 |
+| `RELAY_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 
-**Q: 连接不上怎么办？**  
-A: 检查网络连接状态，确保双方 SGI 版本一致。如果 NAT 类型为 Symmetric，将自动使用中继模式。
+## 管理 API
 
-**Q: 中继服务器是自己搭建的吗？**  
-A: SGI 默认使用公共中继服务器。你也可以在设置中指定自己的中继服务器地址。
+设置 `RELAY_ADMIN_TOKEN` 后，以下任一种方式携带令牌：
 
-> 更多问题请查看[常见问题解答](https://docs.qq.com/doc/DQ0FyWW54WmdaU1VX)或提交[意见与 Bug 反馈](https://docs.qq.com/form/page/DQ0V1Y3Z4eGVZZ3FV)。
+```bash
+# Authorization 头
+curl -H "Authorization: Bearer $RELAY_ADMIN_TOKEN" http://127.0.0.1:9801/health
+# 自定义头
+curl -H "X-Admin-Token: $RELAY_ADMIN_TOKEN" http://127.0.0.1:9801/metrics
+# 查询参数
+curl "http://127.0.0.1:9801/api/rooms?token=$RELAY_ADMIN_TOKEN"
+```
 
-## 📄 许可证
+| 方法与路径 | 说明 |
+|------------|------|
+| `GET /health` | 健康检查 |
+| `GET /metrics` | 运行指标 |
+| `GET /api/rooms` | 房间列表 |
+| `DELETE /api/rooms/:code` | 删除指定房间 |
+
+## Docker
+
+```bash
+# 可选：在 .env 中设置 RELAY_ADMIN_TOKEN
+docker compose -f src/relay-server/docker-compose.yml up -d --build
+```
+
+管理端口默认只绑定宿主机 `127.0.0.1:9801`，远程运维请使用 SSH 隧道。WebSocket 端口 `9800` 对外暴露。
+
+## 测试
+
+```bash
+npm test                         # 单元测试
+npm run test:integration         # 需先启动服务端
+RELAY_URL=ws://服务器:9800 npm run test:integration
+```
+
+## 协议
+
+客户端与服务器的帧格式、房间与信令流程见 [src/relay-server/protocol.md](src/relay-server/protocol.md)。
+
+## 许可证
 
 Copyright © 2026. MIT License.
