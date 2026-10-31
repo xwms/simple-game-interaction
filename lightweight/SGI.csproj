@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>SGI</RootNamespace>
+    <AssemblyName>SGI</AssemblyName>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <Prefer32Bit>false</Prefer32Bit>
+    <PlatformTarget>x64</PlatformTarget>
+    <Version>1.2.2</Version>
+    <!-- 单文件体积：禁用无关本地化资源 -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Fody" Version="6.8.0" PrivateAssets="all" />
+    <PackageReference Include="Costura.Fody" Version="5.7.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SPA 资源由 build.mjs 在 dotnet build 前生成 -->
+    <EmbeddedResource Include="src\Resources\SPA.zip" Condition="Exists('src\Resources\SPA.zip')" LogicalName="SGI.Resources.SPA.zip" />
+  </ItemGroup>
+
+  <!-- WebView2Loader.dll 来自 NuGet 包，restore 后追加为内嵌资源（避免首次构建时机问题） -->
+  <Target Name="AddWebView2LoaderResource" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <WebView2LoaderPath>$(NuGetPackageRoot)microsoft.web.webview2\1.0.4078.44\runtimes\win-x64\native\WebView2Loader.dll</WebView2LoaderPath>
+    </PropertyGroup>
+    <ItemGroup Condition="Exists('$(WebView2LoaderPath)')">
+      <EmbeddedResource Include="$(WebView2LoaderPath)" LogicalName="SGI.Resources.WebView2Loader.dll" />
+    </ItemGroup>
+  </Target>
+
+</Project>

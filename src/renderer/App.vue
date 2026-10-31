@@ -32,6 +32,9 @@ const { t } = useI18n()
 
 const downloadState = getDownloadState()
 
+// 轻量版：窗口由 DWM 剪出圆角，SPA 容器铺满整个客户端区，避免圆角外露出方框底色
+const isLite = !!import.meta.env.VITE_LITE
+
 const showRoomFloatingBtn = computed(() => {
   return roomStore.roomCode !== '' && !route.path.startsWith('/room/')
 })
@@ -150,7 +153,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
       <NDialogProvider>
         <NMessageProvider>
           <GlobalErrorWatcher />
-          <div class="app-container relative flex flex-col h-screen select-none rounded-xl overflow-hidden bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800">
+          <div class="app-container relative flex flex-col h-screen select-none overflow-hidden bg-gradient-to-br from-gray-50 via-white to-blue-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-800" :class="isLite ? '' : 'rounded-xl'">
             <!-- 背景图片层 -->
             <div v-if="settings.backgroundDataUrl" class="absolute inset-0 z-0" :style="bgStyle"></div>
             <!-- 遮罩层 -->

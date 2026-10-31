@@ -51,4 +51,19 @@ const settings = useSettingsStore()
 settings.load()
 i18n.global.locale.value = settings.locale
 
-app.mount('#app')
+// 轻量版 (WebView2) 环境：先安装 electronAPI shim 再挂载（Electron 构建下此分支被摇树移除）
+function mountApp(): void {
+  app.mount('#app')
+}
+
+if (import.meta.env.VITE_LITE) {
+  void import('./utils/lite-shim')
+    .then(({ installLiteShim }) => installLiteShim())
+    .then(mountApp)
+    .catch((err: unknown) => {
+      console.error('[lite] shim 安装失败:', err)
+      mountApp()
+    })
+} else {
+  mountApp()
+}

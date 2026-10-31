@@ -19,15 +19,13 @@
     "paths": {
       "@/*": ["./src/*"],
       "@renderer/*": ["./src/renderer/*"],
-      "@shared/*": ["./src/shared/*"],
-      "@core/*": ["./src/core/*"]
+      "@shared/*": ["./src/shared/*"]
     },
     "types": ["node"]
   },
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.vue",
-    "src/core/**/*.ts",
     "src/shared/**/*.ts",
     "src/renderer/src/auto-imports.d.ts",
     "src/renderer/src/components.d.ts"

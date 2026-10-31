@@ -16,6 +16,10 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 
+// 轻量版 (WebView2) 下禁用 -webkit-app-region：Blink 会吞掉该区域的鼠标事件，
+// 导致 JS 无法感知拖拽起点，需改用 data-drag-region 标记由 lite-shim 检测。
+const isLite = !!import.meta.env.VITE_LITE
+
 /**
  * 功能描述：根据当前路由显示对应的页面名称
  */
@@ -40,7 +44,7 @@ function handleClose(): void {
 </script>
 
 <template>
-  <nav class="nav-bar flex items-center h-12 px-4 border-b border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900 shadow-sm" style="-webkit-app-region: drag">
+  <nav class="nav-bar flex items-center h-12 px-4 border-b border-gray-200/60 dark:border-gray-700/60 bg-white dark:bg-gray-900 shadow-sm" :style="isLite ? '' : '-webkit-app-region: drag'" data-drag-region>
     <!-- 左侧：Logo（可拖拽） -->
     <div class="flex items-center flex-1">
       <div class="flex items-center gap-1.5">
@@ -54,7 +58,8 @@ function handleClose(): void {
       <button
         class="h-9 px-3 flex items-center gap-1.5 rounded-lg text-[15px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         :class="{ 'text-primary!': ['/', '/host', '/join'].includes(route.path) }"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="router.push('/')"
       >
         <span class="iconfont icon-shouye" />
@@ -63,7 +68,8 @@ function handleClose(): void {
       <button
         class="h-9 px-3 flex items-center gap-1.5 rounded-lg text-[15px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         :class="{ 'text-primary!': route.path === '/settings' }"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="router.push('/settings')"
       >
         <span class="iconfont icon-shezhi text-lg" />
@@ -72,7 +78,8 @@ function handleClose(): void {
       <button
         class="h-9 px-3 flex items-center gap-1.5 rounded-lg text-[15px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         :class="{ 'text-primary!': route.path === '/logs' }"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="router.push('/logs')"
       >
         <span class="iconfont icon-rizhi" />
@@ -81,7 +88,8 @@ function handleClose(): void {
       <button
         class="h-9 px-3 flex items-center gap-1.5 rounded-lg text-[15px] text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         :class="{ 'text-primary!': route.path === '/about' }"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="router.push('/about')"
       >
         <span class="iconfont icon-guanyu" />
@@ -93,14 +101,16 @@ function handleClose(): void {
     <div class="flex items-center justify-end flex-1 gap-1">
       <button
         class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition-colors"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="handleMinimize"
       >
         <span class="iconfont icon-zuixiaohua text-lg font-bold" />
       </button>
       <button
         class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-colors"
-        style="-webkit-app-region: no-drag"
+        :style="isLite ? '' : '-webkit-app-region: no-drag'"
+        data-no-drag
         @click="handleClose"
       >
         <span class="iconfont icon-kaiguan text-lg font-bold" />

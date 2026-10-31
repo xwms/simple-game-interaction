@@ -8,6 +8,8 @@ dist/
 # .NET build output (lightweight)
 lightweight/bin/
 lightweight/obj/
+lightweight/dist/
+lightweight/src/Resources/SPA.zip
 
 # IDE
 .idea/
