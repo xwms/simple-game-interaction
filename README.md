@@ -7,6 +7,14 @@
 
 **SGI (Simple Game Interaction)** 是一款帮助非技术用户将**局域网联机游戏**通过互联网进行联机的桌面工具。无需公网 IP、无需端口转发、无需复杂配置，几步即可和朋友联机。 🎮
 
+## 🌿 仓库分支
+
+| 分支 | 内容 |
+|------|------|
+| `main` | Electron 全平台客户端（本分支） |
+| `relay-server` | 独立中继服务器（Node/TypeScript + Docker） |
+| `lightweight` | C# + WebView2 轻量版 Windows 客户端 |
+
 ## ✨ 功能特性
 
 - 🔍 **自动游戏发现** — 自动检测本机安装的局域网联机游戏（Minecraft、Terraria、Stardew Valley 等）
@@ -116,11 +124,11 @@ src/
 │   └── composables/     #   组合式函数
 ├── core/                # 核心引擎 (TS, 平台无关)
 │   ├── discovery/       #   LAN 游戏发现
-│   ├── network-detect/  #   网络检测
+│   ├── network/         #   网络检测
 │   ├── connection/      #   路径选择
 │   ├── tunnel/          #   TCP 隧道
 │   ├── p2p/             #   P2P 直连
-│   ├── game-detect/     #   本地游戏检测
+│   ├── local-detect/    #   本地游戏检测
 │   └── utils/           #   工具函数
 └── shared/              # 共享类型
 ```

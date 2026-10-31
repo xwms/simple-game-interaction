@@ -5,10 +5,6 @@ node_modules/
 dist/
 /release/
 
-# .NET build output (lightweight)
-lightweight/bin/
-lightweight/obj/
-
 # IDE
 .idea/
 *.swp
